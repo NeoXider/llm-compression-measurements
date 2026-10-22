@@ -9,7 +9,6 @@
 \begin{document}
 \maketitle
 
-NeoXider --- v3.0, 2026-10-23
 
 This is an empirical measurement study and most of what it reports is negative. We do not propose a new
 method. Every number was measured, apart from the rows marked * (analytic projection, still to be validated
@@ -372,7 +371,7 @@ compression did not pay off: f16e3 saves less than 5\% of KV bytes and its decod
 more bytes. All KV speed results depend on the attention shape of the model: the same kernel is slower on
 Qwen3.5-2B.
 
-\begin{figure}[htbp]\centering\includegraphics[width=\linewidth]{figures/fig80_combo_decode_ad.png}\caption{Combined fork, Qwen3.5-2B: decode speed of rows A--D relative to row A, per pair and depth (R82--R86). Grey = base, green = ours lossless, orange = ours lossy, hatched = our decode kernel on an unchanged format; pale bars marked † are cells with CV > 8\% caused by desktop interference.}\end{figure}
+\begin{figure}[htbp]\centering\includegraphics[width=\linewidth]{figures/fig80_combo_decode_ad.png}\caption{Combined fork, Qwen3.5-2B: decode speed of rows A--D relative to row A, per pair and depth (R82--R86). Grey = base, green = ours lossless, orange = ours lossy, hatched = our decode kernel on an unchanged format; pale bars marked $\dagger$ are cells with CV > 8\% caused by desktop interference.}\end{figure}
 
 \begin{figure}[htbp]\centering\includegraphics[width=\linewidth]{figures/fig84_combo_qwen3_4b_kv.png}\caption{Qwen3-4B Q4\_K\_M in the combined fork: decode and prefill against filled depth for each KV type and kernel, and process memory at 120K (R85).}\end{figure}
 

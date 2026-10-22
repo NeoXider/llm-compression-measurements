@@ -10,7 +10,7 @@ SPECIAL = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r
            "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
 UNI = {"≈": r"$\approx$", "≤": r"$\leq$", "≥": r"$\geq$", "×": r"$\times$", "−": "--", "–": "--", "—": "---",
        "→": r"$\rightarrow$", "·": r"$\cdot$", "…": r"\ldots{}", "⁻³": r"$^{-3}$", "≠": r"$\neq$", "±": r"$\pm$",
-       "§": r"\S{}", "“": "``","”": "''", "’": "'", "°": r"$^\circ$"}
+       "§": r"\S{}", "“": "``","”": "''", "’": "'", "°": r"$^\circ$", "†": r"$\dagger$"}
 
 
 def esc(s: str) -> str:
@@ -55,6 +55,8 @@ def main():
     body, i = [], 1
     while i < len(lines):
         ln = lines[i]
+        if i < 4 and ln.startswith("NeoXider — v3"):
+            i += 1; continue
         if ln.startswith("|"):
             j = i
             while j < len(lines) and lines[j].startswith("|"):
