@@ -4,6 +4,8 @@ Companion material for the paper *"How Much Can Be Added on Top of Existing KV-C
 Empirical Study of Lossless and Lossy Compression for GPU-Resident LLM Inference on a Consumer GPU"*
 (`paper/PAPER_V2_EN.md`). It is an empirical measurement study with negative results and proposes no new method.
 
+DOI: https://doi.org/10.5281/zenodo.23578725 (Zenodo archive of v3.0.1)
+
 Also on Hugging Face (paper PDF and records): https://huggingface.co/datasets/neoxider2/llm-compression-measurements
 
 Status: v3.0, 2026-10-23. License: MIT for code and scripts; the paper text and the figures are also available
