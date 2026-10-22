@@ -1,0 +1,22 @@
+{
+  "title": "LLM compression measurements: lossless and lossy compression on top of existing KV-cache and weight formats (RTX 3090, llama.cpp)",
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "creators": [
+    {
+      "name": "NeoXider"
+    }
+  ],
+  "description": "<p>Measurements of how much compression can be added on top of the KV-cache formats (F16, Q8_0, Q4_0) and weight formats (BF16, Q8_0, Q4_K_M) used by llama.cpp, on one RTX 3090. A measurement study with mostly negative results; no new method is proposed. Includes the paper, all measurement records (R1-R87), llama.cpp patches, scripts and result summaries. All speed windows were shared with desktop applications; server-GPU rows are analytic projections.</p>",
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "keywords": [
+    "llm",
+    "llama.cpp",
+    "kv-cache",
+    "quantization",
+    "lossless compression",
+    "gpu inference"
+  ],
+  "version": "3.0.1"
+}
