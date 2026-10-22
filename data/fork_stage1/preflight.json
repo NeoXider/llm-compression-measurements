@@ -1,0 +1,265 @@
+{
+ "verdict": "DIRTY",
+ "checked_at": "2026-10-21T23:54:02",
+ "thresholds": {
+  "max_util": 3.0,
+  "max_temp": 70.0
+ },
+ "problems": [
+  "utilization 14% > 3.0%",
+  "utilization 5% > 3.0%",
+  "utilization 6% > 3.0%",
+  "utilization 8% > 3.0%"
+ ],
+ "blocking_compute_processes": [],
+ "all_gpu_context_processes": [
+  {
+   "pid": 1796,
+   "name": "C:\\Windows\\System32\\ShellHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 37452,
+   "name": "C:\\Windows\\explorer.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 23528,
+   "name": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\CrossDeviceResume.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 13648,
+   "name": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\SearchHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 27864,
+   "name": "C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 32896,
+   "name": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 33704,
+   "name": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 36700,
+   "name": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 23480,
+   "name": "<user-temp> Agent Deck\\NeoXider Agent Deck.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 12056,
+   "name": "C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 19136,
+   "name": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 2296,
+   "name": "C:\\Program Files\\Parsec\\parsecd.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 29540,
+   "name": "<user-temp>",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 19532,
+   "name": "C:\\Windows\\System32\\ApplicationFrameHost.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 27576,
+   "name": "C:\\Windows\\ImmersiveControlPanel\\SystemSettings.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 39480,
+   "name": "C:\\Program Files\\BlackTemple\\Blacktemple.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 24612,
+   "name": "C:\\Program Files\\WindowsApps\\Claude_3.1623.0.0_x64__pzs8sxrjxfjjc\\app\\claude.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 21084,
+   "name": "C:\\Program Files\\WindowsApps\\Claude_3.1623.0.0_x64__pzs8sxrjxfjjc\\app\\claude.exe",
+   "used_memory": "[N/A]"
+  },
+  {
+   "pid": 23936,
+   "name": "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.12741.0_x64__8wekyb3d8bbwe\\WindowsTerminal.exe",
+   "used_memory": "[N/A]"
+  }
+ ],
+ "samples": [
+  {
+   "timestamp": "2026/10/21 23:53:51.710",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "6",
+   "utilization.memory": "4",
+   "memory.used": "1057",
+   "memory.total": "24576",
+   "temperature.gpu": "63",
+   "power.draw": "33.16",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:52.784",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "5",
+   "utilization.memory": "4",
+   "memory.used": "1056",
+   "memory.total": "24576",
+   "temperature.gpu": "63",
+   "power.draw": "33.51",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:53.859",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "5",
+   "utilization.memory": "4",
+   "memory.used": "1041",
+   "memory.total": "24576",
+   "temperature.gpu": "62",
+   "power.draw": "33.19",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:54.978",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "14",
+   "utilization.memory": "6",
+   "memory.used": "1041",
+   "memory.total": "24576",
+   "temperature.gpu": "62",
+   "power.draw": "33.64",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:56.045",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "6",
+   "utilization.memory": "4",
+   "memory.used": "1044",
+   "memory.total": "24576",
+   "temperature.gpu": "61",
+   "power.draw": "32.97",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:57.101",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "8",
+   "utilization.memory": "5",
+   "memory.used": "1039",
+   "memory.total": "24576",
+   "temperature.gpu": "61",
+   "power.draw": "32.06",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:58.159",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "8",
+   "utilization.memory": "5",
+   "memory.used": "1039",
+   "memory.total": "24576",
+   "temperature.gpu": "61",
+   "power.draw": "32.57",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:53:59.215",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "5",
+   "utilization.memory": "3",
+   "memory.used": "1042",
+   "memory.total": "24576",
+   "temperature.gpu": "60",
+   "power.draw": "32.48",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:54:00.271",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "5",
+   "utilization.memory": "3",
+   "memory.used": "1041",
+   "memory.total": "24576",
+   "temperature.gpu": "60",
+   "power.draw": "32.28",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  },
+  {
+   "timestamp": "2026/10/21 23:54:01.342",
+   "index": "0",
+   "uuid": "GPU-6157476d-e294-6b97-89e2-1ecc2b9ac439",
+   "utilization.gpu": "6",
+   "utilization.memory": "4",
+   "memory.used": "1042",
+   "memory.total": "24576",
+   "temperature.gpu": "60",
+   "power.draw": "31.55",
+   "clocks.sm": "210",
+   "clocks.mem": "405",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "pstate": "P8"
+  }
+ ],
+ "note": "Under WDDM nvidia-smi lists graphics/desktop apps as C+G; only type C or busy C+G apps matter. Decide manually; this tool never kills anything."
+}

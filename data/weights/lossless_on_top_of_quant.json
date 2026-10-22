@@ -1,0 +1,54 @@
+{
+ "qwen35-2b-Q8_0.gguf": {
+  "base": 2065712384,
+  "native_zlib64k": 1984996883,
+  "split_zlib64k": 1950116592,
+  "split_lzma256k": 1951619795,
+  "huffman": 1984773153.125,
+  "ratio_vs_base": {
+   "native_zlib64k": 0.9609260700448026,
+   "split_zlib64k": 0.9440407130753784,
+   "split_lzma256k": 0.9447684053773867,
+   "huffman": 0.9608177636432275
+  }
+ },
+ "qwen35-2b-Q4_K_M.gguf": {
+  "base": 1301202176,
+  "native_zlib64k": 1285537508,
+  "split_zlib64k": 1272796937,
+  "split_lzma256k": 1275617111,
+  "huffman": 1282649959.25,
+  "ratio_vs_base": {
+   "native_zlib64k": 0.9879613881002302,
+   "split_zlib64k": 0.9781700034599389,
+   "split_lzma256k": 0.9803373638071752,
+   "huffman": 0.9857422489047544
+  }
+ },
+ "qwen35-2b-Q3_K_M.gguf": {
+  "base": 1116840192,
+  "native_zlib64k": 1108889338,
+  "split_zlib64k": 1100627115,
+  "split_lzma256k": 1102194367,
+  "huffman": 1107368738.0,
+  "ratio_vs_base": {
+   "native_zlib64k": 0.9928809385112101,
+   "split_zlib64k": 0.985483082435486,
+   "split_lzma256k": 0.9868863736236312,
+   "huffman": 0.9915194187424086
+  }
+ },
+ "Qwen3-4B-Q4_K_M.gguf": {
+  "base": 2491323904,
+  "native_zlib64k": 2429691630,
+  "split_zlib64k": 2397349895,
+  "split_lzma256k": 2384632435,
+  "huffman": 2431596948.75,
+  "ratio_vs_base": {
+   "native_zlib64k": 0.9752612360435972,
+   "split_zlib64k": 0.9622794896925615,
+   "split_lzma256k": 0.9571747901472389,
+   "huffman": 0.976026017671125
+  }
+ }
+}

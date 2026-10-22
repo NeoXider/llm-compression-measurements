@@ -1,0 +1,250 @@
+{
+ "schema": "wddm-native-kv-summary-v1",
+ "run_dir": "<project-repo>\\results\\gpu_wddm_native_kv_20261011_r01",
+ "metric": "DXGI QueryVideoMemoryInfo CurrentUsage of the calling process, LOCAL segment, sampled every 5 ms; sampled peak is a lower bound, not a proven physical peak",
+ "table": {
+  "f16": {
+   "slots": 4,
+   "local_mib_distinct_values": [
+    4966.0
+   ],
+   "non_local_mib_distinct_values": [
+    84.0
+   ],
+   "kv_buffer_mib": [
+    2304.0
+   ],
+   "compute_buffer_mib": [
+    22.7531
+   ]
+  },
+  "q8_0": {
+   "slots": 2,
+   "local_mib_distinct_values": [
+    3940.0
+   ],
+   "non_local_mib_distinct_values": [
+    84.0
+   ],
+   "kv_buffer_mib": [
+    1224.0
+   ],
+   "compute_buffer_mib": [
+    74.5812
+   ],
+   "delta_vs_f16_mib": -1026.0,
+   "delta_vs_f16_pct": -20.660491341119613
+  },
+  "q4_0": {
+   "slots": 2,
+   "local_mib_distinct_values": [
+    3364.0
+   ],
+   "non_local_mib_distinct_values": [
+    84.0
+   ],
+   "kv_buffer_mib": [
+    648.0
+   ],
+   "compute_buffer_mib": [
+    74.5812
+   ],
+   "delta_vs_f16_mib": -1602.0,
+   "delta_vs_f16_pct": -32.259363672976235
+  }
+ },
+ "slots": [
+  {
+   "slot": "000-baseline",
+   "kv_type": "f16",
+   "arm": "baseline",
+   "group_variant": "native_q8_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 4966.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 28,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 2304.0,
+    "CUDA0:compute": 22.7531,
+    "CUDA_Host:compute": 5.253
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 166.52,
+   "prefill_tok_s": 964.49,
+   "receipt_sha256": "75a6541a86b9a2444a0744e2492092697fbcdc89b7f42ac0061fe00d1761c696",
+   "driver_memory_sha256": "eedd627b2bb0e81f043f5d7c90f601d18a9a2b76a6f227848b1ca01af8b4e614"
+  },
+  {
+   "slot": "001-native_q8_0",
+   "kv_type": "q8_0",
+   "arm": "native_q8_0",
+   "group_variant": "native_q8_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 3940.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 32,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 1224.0,
+    "CUDA0:compute": 74.5812,
+    "CUDA_Host:compute": 5.3311
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 156.39,
+   "prefill_tok_s": 969.9,
+   "receipt_sha256": "48d37c0ace727a098d9800f97b510e2728a2763a4562f41bd0387c49d29eba61",
+   "driver_memory_sha256": "ce7308ec1e1cbb5165d4251ffb536d2036d88077519f62ab4a20f2b35b6c62ae"
+  },
+  {
+   "slot": "002-native_q8_0",
+   "kv_type": "q8_0",
+   "arm": "native_q8_0",
+   "group_variant": "native_q8_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 3940.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 34,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 1224.0,
+    "CUDA0:compute": 74.5812,
+    "CUDA_Host:compute": 5.3311
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 142.31,
+   "prefill_tok_s": 646.5,
+   "receipt_sha256": "7547263cec79638e78325c41b23c6023dced5e19b360efacd792d41f3111428f",
+   "driver_memory_sha256": "88d554bfb273b7980a4ba04b38ea25fb631e26783c5a6852251198339d53ac50"
+  },
+  {
+   "slot": "003-baseline",
+   "kv_type": "f16",
+   "arm": "baseline",
+   "group_variant": "native_q8_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 4966.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 31,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 2304.0,
+    "CUDA0:compute": 22.7531,
+    "CUDA_Host:compute": 5.253
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 142.63,
+   "prefill_tok_s": 761.86,
+   "receipt_sha256": "33b7d8f8e714bfca6b1e8cd6dff7912cf1c26a163690b36d1808a06e024c8a5d",
+   "driver_memory_sha256": "3cbdd1064714be506f5b6d7c72020af3dd461c368889042e399ad793289f4209"
+  },
+  {
+   "slot": "004-native_q4_0",
+   "kv_type": "q4_0",
+   "arm": "native_q4_0",
+   "group_variant": "native_q4_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 3364.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 32,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 648.0,
+    "CUDA0:compute": 74.5812,
+    "CUDA_Host:compute": 5.3311
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 116.25,
+   "prefill_tok_s": 547.91,
+   "receipt_sha256": "f0aa8bc05a0439e407f759f0c24ed4a023f5802bc14ccbd52bf831cb2aa45952",
+   "driver_memory_sha256": "ff9c52f554e67704251a0918f2abd006234b4196bdf19ecf3329f77867bf0f61"
+  },
+  {
+   "slot": "005-baseline",
+   "kv_type": "f16",
+   "arm": "baseline",
+   "group_variant": "native_q4_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 4966.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 20,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 2304.0,
+    "CUDA0:compute": 22.7531,
+    "CUDA_Host:compute": 5.253
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 128.85,
+   "prefill_tok_s": 540.83,
+   "receipt_sha256": "f11ef9ce37b231a731f11b1be9f5bc6a1c00f367da89b41ea1f0ff178583a076",
+   "driver_memory_sha256": "fb571d20a4f120c2114926726f4af263d742820032177f60d1f39ee3cd935ab6"
+  },
+  {
+   "slot": "006-baseline",
+   "kv_type": "f16",
+   "arm": "baseline",
+   "group_variant": "native_q4_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 4966.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 37,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 2304.0,
+    "CUDA0:compute": 22.7531,
+    "CUDA_Host:compute": 5.253
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 146.73,
+   "prefill_tok_s": 812.35,
+   "receipt_sha256": "97f7bb38a3147e923042888a5e504f49ddb8bdee5b19736a34e54c5a92405450",
+   "driver_memory_sha256": "c14cfb2c966ee8db22715c8b400b86099ec5efee9008509158c0ca1de92c1466"
+  },
+  {
+   "slot": "007-native_q4_0",
+   "kv_type": "q4_0",
+   "arm": "native_q4_0",
+   "group_variant": "native_q4_0",
+   "exit_code": 0,
+   "local_sampled_peak_mib": 3364.0,
+   "non_local_sampled_peak_mib": 84.0,
+   "valid_sample_pairs": 26,
+   "physical_peak_proven": false,
+   "declared_buffers_mib": {
+    "CUDA0:model": 2375.91,
+    "CUDA_Host:output": 0.58,
+    "CUDA0:KV": 648.0,
+    "CUDA0:compute": 74.5812,
+    "CUDA_Host:compute": 5.3311
+   },
+   "prompt_tokens": 28,
+   "decode_tokens": 64,
+   "decode_tok_s": 137.0,
+   "prefill_tok_s": 429.24,
+   "receipt_sha256": "86fc31db1a4be8fc0cc9a054a74c9dd5b5ab43eebc70eabe3496649b4a9bf21e",
+   "driver_memory_sha256": "92136e4e962b69bdb6095df3b3f4c5625cd06fc57eff5b516c4585a578d86106"
+  }
+ ]
+}

@@ -1,0 +1,191 @@
+[
+ {
+  "kv": "f16",
+  "length": 102400,
+  "depth": 0.1,
+  "code": "4817",
+  "answer": "The access code for the archive room ORION is **4817**",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 93581,
+   "prompt_ms": 54437.026,
+   "prompt_per_token_ms": 0.581710240326562,
+   "prompt_per_second": 1719.0689292982318,
+   "predicted_n": 16,
+   "predicted_ms": 357.424,
+   "predicted_per_token_ms": 23.828266666666664,
+   "predicted_per_second": 41.96696360624916
+  },
+  "error": null
+ },
+ {
+  "kv": "f16",
+  "length": 102400,
+  "depth": 0.5,
+  "code": "9052",
+  "answer": "The access code for the archive room VEGA is **9052**",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 11189,
+   "prompt_n": 82392,
+   "prompt_ms": 52696.114,
+   "prompt_per_token_ms": 0.6395780415574328,
+   "prompt_per_second": 1563.5308516297805,
+   "predicted_n": 16,
+   "predicted_ms": 340.617,
+   "predicted_per_token_ms": 22.707800000000002,
+   "predicted_per_second": 44.03773152837351
+  },
+  "error": null
+ },
+ {
+  "kv": "f16",
+  "length": 102400,
+  "depth": 0.9,
+  "code": "3364",
+  "answer": "3364",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 46668,
+   "prompt_n": 46913,
+   "prompt_ms": 37854.553,
+   "prompt_per_token_ms": 0.8069096625668791,
+   "prompt_per_second": 1239.2961026379046,
+   "predicted_n": 5,
+   "predicted_ms": 99.329,
+   "predicted_per_token_ms": 24.83225,
+   "predicted_per_second": 40.270213130102995
+  },
+  "error": null
+ },
+ {
+  "kv": "q8_0",
+  "length": 102400,
+  "depth": 0.1,
+  "code": "4817",
+  "answer": "The access code for the archive room ORION is **4817**",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 93581,
+   "prompt_ms": 57067.828,
+   "prompt_per_token_ms": 0.6098228059114564,
+   "prompt_per_second": 1639.8206008471184,
+   "predicted_n": 16,
+   "predicted_ms": 497.683,
+   "predicted_per_token_ms": 33.178866666666664,
+   "predicted_per_second": 30.13966721788769
+  },
+  "error": null
+ },
+ {
+  "kv": "q8_0",
+  "length": 102400,
+  "depth": 0.5,
+  "code": "9052",
+  "answer": "The access code for the archive room VEGA is **9052**",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 11189,
+   "prompt_n": 82392,
+   "prompt_ms": 54327.853,
+   "prompt_per_token_ms": 0.6593826220992329,
+   "prompt_per_second": 1516.570146808489,
+   "predicted_n": 16,
+   "predicted_ms": 501.994,
+   "predicted_per_token_ms": 33.46626666666667,
+   "predicted_per_second": 29.880835229106324
+  },
+  "error": null
+ },
+ {
+  "kv": "q8_0",
+  "length": 102400,
+  "depth": 0.9,
+  "code": "3364",
+  "answer": "3364",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 46668,
+   "prompt_n": 46913,
+   "prompt_ms": 39047.646,
+   "prompt_per_token_ms": 0.8323416963315072,
+   "prompt_per_second": 1201.429658525382,
+   "predicted_n": 5,
+   "predicted_ms": 139.944,
+   "predicted_per_token_ms": 34.986,
+   "predicted_per_second": 28.58286171611502
+  },
+  "error": null
+ },
+ {
+  "kv": "q4_0",
+  "length": 102400,
+  "depth": 0.1,
+  "code": "4817",
+  "answer": "The access code for the archive room ORION is **4817**",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 93581,
+   "prompt_ms": 55731.675,
+   "prompt_per_token_ms": 0.5955447687030487,
+   "prompt_per_second": 1679.1348905267964,
+   "predicted_n": 16,
+   "predicted_ms": 503.464,
+   "predicted_per_token_ms": 33.56426666666667,
+   "predicted_per_second": 29.793590008421656
+  },
+  "error": null
+ },
+ {
+  "kv": "q4_0",
+  "length": 102400,
+  "depth": 0.5,
+  "code": "9052",
+  "answer": "**Answer:** 9052",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 11189,
+   "prompt_n": 82392,
+   "prompt_ms": 53838.93,
+   "prompt_per_token_ms": 0.6534485144188756,
+   "prompt_per_second": 1530.3424492277243,
+   "predicted_n": 9,
+   "predicted_ms": 282.405,
+   "predicted_per_token_ms": 35.300625,
+   "predicted_per_second": 28.32811033798977
+  },
+  "error": null
+ },
+ {
+  "kv": "q4_0",
+  "length": 102400,
+  "depth": 0.9,
+  "code": "3364",
+  "answer": "3364",
+  "pass": true,
+  "prompt_tokens": 93581,
+  "timings": {
+   "cache_n": 46668,
+   "prompt_n": 46913,
+   "prompt_ms": 39107.7,
+   "prompt_per_token_ms": 0.833621810585552,
+   "prompt_per_second": 1199.58473650969,
+   "predicted_n": 5,
+   "predicted_ms": 148.41,
+   "predicted_per_token_ms": 37.1025,
+   "predicted_per_second": 26.952361700694023
+  },
+  "error": null
+ }
+]

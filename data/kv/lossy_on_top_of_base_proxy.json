@@ -1,0 +1,163 @@
+{
+ "tokens": 2304,
+ "layer_stride": 4,
+ "metric": "relative Frobenius error vs original F16",
+ "bases": {
+  "F16": {
+   "base": {
+    "K": {
+     "bits_per_element": 16.0,
+     "size_vs_base": 1.0,
+     "rel_err": 0.0,
+     "err_vs_base_err": null
+    },
+    "V": {
+     "bits_per_element": 16.0,
+     "size_vs_base": 1.0,
+     "rel_err": 0.0,
+     "err_vs_base_err": null
+    }
+   },
+   "drop2": {
+    "K": {
+     "bits_per_element": 14.0,
+     "size_vs_base": 0.875,
+     "rel_err": 0.001340625846448044,
+     "err_vs_base_err": null
+    },
+    "V": {
+     "bits_per_element": 14.0,
+     "size_vs_base": 0.875,
+     "rel_err": 0.0013421121596669157,
+     "err_vs_base_err": null
+    }
+   },
+   "drop4": {
+    "K": {
+     "bits_per_element": 12.0,
+     "size_vs_base": 0.75,
+     "rel_err": 0.006295142798788018,
+     "err_vs_base_err": null
+    },
+    "V": {
+     "bits_per_element": 12.0,
+     "size_vs_base": 0.75,
+     "rel_err": 0.006293230120920473,
+     "err_vs_base_err": null
+    }
+   }
+  },
+  "Q8_0": {
+   "base": {
+    "K": {
+     "bits_per_element": 8.5,
+     "size_vs_base": 1.0,
+     "rel_err": 0.008920822965188159,
+     "err_vs_base_err": 1.0
+    },
+    "V": {
+     "bits_per_element": 8.5,
+     "size_vs_base": 1.0,
+     "rel_err": 0.006042207539495494,
+     "err_vs_base_err": 1.0
+    }
+   },
+   "q7 (codes to 7 bit)": {
+    "K": {
+     "bits_per_element": 7.5,
+     "size_vs_base": 0.8823529411764706,
+     "rel_err": 0.022870821878314018,
+     "err_vs_base_err": 2.563756950178601
+    },
+    "V": {
+     "bits_per_element": 7.5,
+     "size_vs_base": 0.8823529411764706,
+     "rel_err": 0.01596158349679576,
+     "err_vs_base_err": 2.6416807751904035
+    }
+   },
+   "q6 + 1% outliers": {
+    "K": {
+     "bits_per_element": 6.82,
+     "size_vs_base": 0.8023529411764706,
+     "rel_err": 0.018554504443373945,
+     "err_vs_base_err": 2.0799095011502216
+    },
+    "V": {
+     "bits_per_element": 6.82,
+     "size_vs_base": 0.8023529411764706,
+     "rel_err": 0.019845633457104366,
+     "err_vs_base_err": 3.284500462352774
+    }
+   },
+   "per-channel scale (K)": {
+    "K": {
+     "bits_per_element": 8.5,
+     "size_vs_base": 1.0,
+     "rel_err": 0.0038193383305850956,
+     "err_vs_base_err": 0.4281374426428311
+    }
+   }
+  },
+  "Q4_0": {
+   "base": {
+    "K": {
+     "bits_per_element": 4.5,
+     "size_vs_base": 1.0,
+     "rel_err": 0.12188002632723914,
+     "err_vs_base_err": 1.0
+    },
+    "V": {
+     "bits_per_element": 4.5,
+     "size_vs_base": 1.0,
+     "rel_err": 0.09649721533060074,
+     "err_vs_base_err": 1.0
+    }
+   },
+   "q4 + 1% outliers": {
+    "K": {
+     "bits_per_element": 4.82,
+     "size_vs_base": 1.0711111111111111,
+     "rel_err": 0.07222265832953983,
+     "err_vs_base_err": 0.5925717322674937
+    },
+    "V": {
+     "bits_per_element": 4.82,
+     "size_vs_base": 1.0711111111111111,
+     "rel_err": 0.07799904214011298,
+     "err_vs_base_err": 0.8083035543863855
+    }
+   },
+   "q3 + 1% outliers": {
+    "K": {
+     "bits_per_element": 3.82,
+     "size_vs_base": 0.8488888888888888,
+     "rel_err": 0.1855900962319639,
+     "err_vs_base_err": 1.5227277333668092
+    },
+    "V": {
+     "bits_per_element": 3.82,
+     "size_vs_base": 0.8488888888888888,
+     "rel_err": 0.2051826218763987,
+     "err_vs_base_err": 2.126306144415052
+    }
+   },
+   "kivi4: per-channel K": {
+    "K": {
+     "bits_per_element": 5.0,
+     "size_vs_base": 1.1111111111111112,
+     "rel_err": 0.03887586440477106,
+     "err_vs_base_err": 0.3189682967444735
+    }
+   },
+   "kivi4: per-token V": {
+    "V": {
+     "bits_per_element": 5.0,
+     "size_vs_base": 1.1111111111111112,
+     "rel_err": 0.08355441441138585,
+     "err_vs_base_err": 0.8658738402463462
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,2494 @@
+From 758867f7c7a7d512abe027b6ab43041b597d09be Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:14:54 +0500
+Subject: [PATCH 1/3] cq: compressed BF16 weight types (Huffman exponent,
+ 4/3-bit exponent window) with fused CUDA GEMV
+
+- GGML_TYPE_CQ_BF16H (lossless, exponent Huffman + companion tensor), CQ_BF16W4 (fixed 12.125 bit,
+  lossless with escape list), CQ_BF16W3 (11.125 bit, lossy)
+- CUDA: batch-1 GEMV decodes inside the kernel and reproduces the summation order of the BF16
+  mul_mat_vec_f kernel (bit-identical outputs); batch > 1 decodes into a BF16 scratch buffer
+- loader: companion tensors <name>.cqx linked via tensor->extra; CPU get_rows
+- tools: llama-cq-convert, llama-cq-logits, llama-cq-kbench
+---
+ ggml/include/ggml.h             |   6 +-
+ ggml/src/CMakeLists.txt         |   2 +
+ ggml/src/ggml-cpu/ggml-cpu.cpp  |   3 +
+ ggml/src/ggml-cpu/ops.cpp       |  61 +++
+ ggml/src/ggml-cq.c              | 631 +++++++++++++++++++++++++++++
+ ggml/src/ggml-cq.h              | 138 +++++++
+ ggml/src/ggml-cuda/cqw.cu       | 680 ++++++++++++++++++++++++++++++++
+ ggml/src/ggml-cuda/cqw.cuh      |  18 +
+ ggml/src/ggml-cuda/ggml-cuda.cu |  36 ++
+ ggml/src/ggml-cuda/mmvf.cu      |   6 +
+ ggml/src/ggml-quants.c          |   3 +
+ ggml/src/ggml.c                 |  25 ++
+ gguf-py/gguf/constants.py       |   6 +
+ src/llama-model-loader.cpp      |  31 ++
+ tools/CMakeLists.txt            |   1 +
+ tools/cq-convert/CMakeLists.txt |  14 +
+ tools/cq-convert/cq-convert.cpp | 238 +++++++++++
+ tools/cq-convert/cq-kbench.cpp  | 201 ++++++++++
+ tools/cq-convert/cq-logits.cpp  | 110 ++++++
+ 19 files changed, 2209 insertions(+), 1 deletion(-)
+ create mode 100644 ggml/src/ggml-cq.c
+ create mode 100644 ggml/src/ggml-cq.h
+ create mode 100644 ggml/src/ggml-cuda/cqw.cu
+ create mode 100644 ggml/src/ggml-cuda/cqw.cuh
+ create mode 100644 tools/cq-convert/CMakeLists.txt
+ create mode 100644 tools/cq-convert/cq-convert.cpp
+ create mode 100644 tools/cq-convert/cq-kbench.cpp
+ create mode 100644 tools/cq-convert/cq-logits.cpp
+
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+index 224bdef9..eaf71357 100644
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -430,7 +430,11 @@ extern "C" {
+         GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
+         GGML_TYPE_Q1_0    = 41,
+         GGML_TYPE_Q2_0    = 42,
+-        GGML_TYPE_COUNT   = 43,
++        // cq/weights-compress research types (values 50..55 reserved for compressed weights, see ggml-cq.h):
++        GGML_TYPE_CQ_BF16H  = 50, // BF16, lossless: Huffman-coded exponent (companion tensor "<name>.cqx") + raw sign/mantissa byte
++        GGML_TYPE_CQ_BF16W4 = 51, // BF16, 4-bit exponent offset per 64 values (12.125 bits); lossless with companion escape list, else values below the window flush to 0
++        GGML_TYPE_CQ_BF16W3 = 52, // BF16, 3-bit exponent offset per 64 values (11.125 bits); lossy (values below the window flush to 0)
++        GGML_TYPE_COUNT   = 64,
+     };
+ 
+     // [TAG_GGML_PREC]
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index 94773200..5287bc66 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -206,6 +206,8 @@ add_library(ggml-base
+             ggml-threading.h
+             ggml-quants.c
+             ggml-quants.h
++            ggml-cq.c
++            ggml-cq.h
+             gguf.cpp)
+ 
+ set_target_properties(ggml-base PROPERTIES
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.cpp b/ggml/src/ggml-cpu/ggml-cpu.cpp
+index 1df0f2bb..9e2c96e4 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.cpp
++++ b/ggml/src/ggml-cpu/ggml-cpu.cpp
+@@ -451,6 +451,9 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
+                 op->type != GGML_TYPE_IQ1_S   &&
+                 op->type != GGML_TYPE_IQ1_M; // missing type_traits.from_float
+         case GGML_OP_MUL_MAT:
++            if (src0->type == GGML_TYPE_CQ_BF16H || src0->type == GGML_TYPE_CQ_BF16W4 || src0->type == GGML_TYPE_CQ_BF16W3) {
++                return false; // cq/weights-compress: GPU only (CPU supports GET_ROWS)
++            }
+             if (ggml_get_op_params_i32(op, 1) == GGML_HINT_SRC0_IS_HADAMARD &&
+                 src0->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32) {
+                 return src1->type == GGML_TYPE_F32 || src1->type == GGML_TYPE_F16;
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index ba00a0a7..6c090f62 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "ggml-cpu.h"
+ #include "ggml-impl.h"
++#include "ggml-cq.h"
+ #include "binary-ops.h"
+ #include "simd-gemm.h"
+ #include "ggml.h"
+@@ -5143,6 +5144,60 @@ static void ggml_compute_forward_get_rows_f32(
+     }
+ }
+ 
++// cq/weights-compress: compressed BF16 weights (ggml-cq.h); the exponent stream / escape list is the
++// companion tensor stored in src0->extra
++static void ggml_compute_forward_get_rows_cq(
++        const ggml_compute_params * params,
++              ggml_tensor * dst) {
++
++    const ggml_tensor * src0 = dst->src[0];
++    const ggml_tensor * src1 = dst->src[1];
++
++    GGML_TENSOR_BINARY_OP_LOCALS
++
++    const int64_t nc = ne00;
++    const int64_t nr = ggml_nelements(src1);
++
++    GGML_ASSERT(ne02 == 1 && ne03 == 1);
++
++    const ggml_tensor * base = src0->view_src ? src0->view_src : src0;
++    GGML_ASSERT(base->data == src0->data);
++    const ggml_tensor * comp = (const ggml_tensor *) base->extra;
++    const uint8_t * cdata = comp ? (const uint8_t *) comp->data : nullptr;
++    GGML_ASSERT(src0->type != GGML_TYPE_CQ_BF16H || cdata != nullptr);
++
++    const int ith = params->ith;
++    const int nth = params->nth;
++
++    const int dr = (nr + nth - 1)/nth;
++    const int ir0 = dr*ith;
++    const int ir1 = MIN(ir0 + dr, nr);
++
++    std::vector<uint16_t> tmp(nc);
++
++    for (int64_t i = ir0; i < ir1; ++i) {
++        const int64_t i12 = i/(ne11*ne10);
++        const int64_t i11 = (i - i12*ne11*ne10)/ne10;
++        const int64_t i10 = (i - i12*ne11*ne10 - i11*ne10);
++        const int64_t i01 = *(int32_t *) ((char *) src1->data + i10*nb10 + i11*nb11 + i12*nb12);
++
++        GGML_ASSERT(i01 >= 0 && i01 < ne01);
++
++        const char * row = (const char *) src0->data + i01*nb01;
++        switch (src0->type) {
++            case GGML_TYPE_CQ_BF16H:  ggml_cq_decode_row_bf16h((const uint8_t *) src0->data, cdata, i01, nc, tmp.data()); break;
++            case GGML_TYPE_CQ_BF16W4: ggml_cq_decode_row_bf16w4(row, cdata, i01, nc, tmp.data()); break;
++            case GGML_TYPE_CQ_BF16W3: ggml_cq_decode_row_bf16w3(row, nc, tmp.data()); break;
++            default: GGML_ABORT("fatal error");
++        }
++        float * out = (float *) ((char *) dst->data + i10*nb1 + i11*nb2 + i12*nb3);
++        for (int64_t k = 0; k < nc; ++k) {
++            const uint32_t u = (uint32_t) tmp[k] << 16;
++            memcpy(&out[k], &u, sizeof(float));
++        }
++    }
++}
++
+ void ggml_compute_forward_get_rows(
+         const ggml_compute_params * params,
+         ggml_tensor * dst) {
+@@ -5150,6 +5205,12 @@ void ggml_compute_forward_get_rows(
+     const ggml_tensor * src0 = dst->src[0];
+ 
+     switch (src0->type) {
++        case GGML_TYPE_CQ_BF16H:
++        case GGML_TYPE_CQ_BF16W4:
++        case GGML_TYPE_CQ_BF16W3:
++            {
++                ggml_compute_forward_get_rows_cq(params, dst);
++            } break;
+         case GGML_TYPE_Q1_0:
+         case GGML_TYPE_Q2_0:
+         case GGML_TYPE_Q4_0:
+diff --git a/ggml/src/ggml-cq.c b/ggml/src/ggml-cq.c
+new file mode 100644
+index 00000000..d2b9382d
+--- /dev/null
++++ b/ggml/src/ggml-cq.c
+@@ -0,0 +1,631 @@
++// ggml-cq.c - CPU encoders/decoders for the compressed BF16 weight formats (see ggml-cq.h)
++#include "ggml-cq.h"
++
++#include <stdlib.h>
++#include <string.h>
++#include <stdio.h>
++
++// ---------------------------------------------------------------------------------------------
++// Huffman code construction (length limited, canonical)
++// ---------------------------------------------------------------------------------------------
++
++static void cq_huff_lengths(const uint64_t * freq, int lmax, uint8_t * len /*[256]*/) {
++    int      syms[256];
++    int      ns = 0;
++    for (int i = 0; i < 256; ++i) {
++        len[i] = 0;
++        if (freq[i] > 0) {
++            syms[ns++] = i;
++        }
++    }
++    if (ns == 0) {
++        return;
++    }
++    if (ns == 1) {
++        len[syms[0]] = 1;
++        return;
++    }
++
++    // plain Huffman tree, O(n^2) selection (n <= 256)
++    uint64_t w[512];
++    int      parent[512];
++    int      alive[512];
++    for (int i = 0; i < ns; ++i) {
++        w[i] = freq[syms[i]];
++        parent[i] = -1;
++        alive[i] = 1;
++    }
++    int nn = ns;
++    for (int it = 0; it < ns - 1; ++it) {
++        int a = -1, b = -1;
++        for (int i = 0; i < nn; ++i) {
++            if (!alive[i]) continue;
++            if (a < 0 || w[i] < w[a]) { b = a; a = i; }
++            else if (b < 0 || w[i] < w[b]) { b = i; }
++        }
++        alive[a] = alive[b] = 0;
++        w[nn] = w[a] + w[b];
++        parent[nn] = -1;
++        alive[nn] = 1;
++        parent[a] = parent[b] = nn;
++        nn++;
++    }
++    int bl_count[600] = {0};
++    int maxlen = 0;
++    for (int i = 0; i < ns; ++i) {
++        int d = 0;
++        for (int k = i; parent[k] >= 0; k = parent[k]) d++;
++        bl_count[d]++;
++        if (d > maxlen) maxlen = d;
++    }
++    // limit the code length (JPEG Annex K.3 procedure), keeps the Kraft sum equal to 1
++    for (int i = maxlen; i > lmax; --i) {
++        while (bl_count[i] > 0) {
++            int j = i - 2;
++            while (bl_count[j] == 0) j--;
++            bl_count[i]   -= 2;
++            bl_count[i-1] += 1;
++            bl_count[j+1] += 2;
++            bl_count[j]   -= 1;
++        }
++    }
++    // assign lengths: most frequent symbols get the shortest codes
++    // sort syms by freq desc, symbol asc (insertion sort, n <= 256)
++    for (int i = 1; i < ns; ++i) {
++        int s = syms[i];
++        int k = i - 1;
++        while (k >= 0 && (freq[syms[k]] < freq[s] || (freq[syms[k]] == freq[s] && syms[k] > s))) {
++            syms[k+1] = syms[k];
++            k--;
++        }
++        syms[k+1] = s;
++    }
++    int idx = 0;
++    for (int l = 1; l <= lmax && idx < ns; ++l) {
++        for (int c = 0; c < bl_count[l]; ++c) {
++            len[syms[idx++]] = (uint8_t) l;
++        }
++    }
++}
++
++// canonical codes ordered by (length, symbol)
++static void cq_canonical(const uint8_t * len, uint32_t * code) {
++    int order[256];
++    int n = 0;
++    for (int l = 1; l <= 32; ++l) {
++        for (int s = 0; s < 256; ++s) {
++            if (len[s] == l) order[n++] = s;
++        }
++    }
++    uint32_t c = 0;
++    int prev = n > 0 ? len[order[0]] : 0;
++    for (int i = 0; i < n; ++i) {
++        const int s = order[i];
++        c <<= (len[s] - prev);
++        prev = len[s];
++        code[s] = c++;
++    }
++}
++
++// build the two-level LUT, returns the number of entries (0 on failure)
++static int cq_build_lut(const uint8_t * len, const uint32_t * code, int P, uint16_t * lut, int lut_cap) {
++    const int nprim = 1 << P;
++    if (nprim > lut_cap) return 0;
++    memset(lut, 0, sizeof(uint16_t)*lut_cap);
++    int next = nprim;
++    // direct codes
++    for (int s = 0; s < 256; ++s) {
++        const int l = len[s];
++        if (l == 0 || l > P) continue;
++        const uint32_t first = code[s] << (P - l);
++        const uint32_t cnt   = 1u << (P - l);
++        for (uint32_t k = 0; k < cnt; ++k) {
++            lut[first + k] = (uint16_t) ((l << 8) | s);
++        }
++    }
++    // long codes: group by P-bit prefix
++    int maxsub[1 << 12];
++    for (int i = 0; i < nprim; ++i) maxsub[i] = 0;
++    for (int s = 0; s < 256; ++s) {
++        const int l = len[s];
++        if (l <= P) continue;
++        const uint32_t pre = code[s] >> (l - P);
++        if (l - P > maxsub[pre]) maxsub[pre] = l - P;
++    }
++    for (int pre = 0; pre < nprim; ++pre) {
++        if (maxsub[pre] == 0) continue;
++        const int sub = maxsub[pre];
++        if (sub > 15 || next >= 2048 || next + (1 << sub) > lut_cap) return 0;
++        lut[pre] = (uint16_t) (0x8000 | (sub << 11) | next);
++        for (int s = 0; s < 256; ++s) {
++            const int l = len[s];
++            if (l <= P) continue;
++            if ((code[s] >> (l - P)) != (uint32_t) pre) continue;
++            const uint32_t suf   = code[s] & ((1u << (l - P)) - 1);
++            const uint32_t first = suf << (sub - (l - P));
++            const uint32_t cnt   = 1u << (sub - (l - P));
++            for (uint32_t k = 0; k < cnt; ++k) {
++                lut[next + first + k] = (uint16_t) ((l << 8) | s);
++            }
++        }
++        next += 1 << sub;
++    }
++    return next;
++}
++
++// ---------------------------------------------------------------------------------------------
++// bit I/O
++// ---------------------------------------------------------------------------------------------
++
++typedef struct {
++    uint32_t * w;
++    size_t     n, cap;
++    uint64_t   acc;
++    int        nacc;
++} cq_bw;
++
++static void cq_bw_word(cq_bw * b, uint32_t v) {
++    if (b->n == b->cap) {
++        b->cap = b->cap ? b->cap*2 : 1 << 16;
++        b->w = (uint32_t *) realloc(b->w, b->cap*sizeof(uint32_t));
++    }
++    b->w[b->n++] = v;
++}
++
++static void cq_bw_put(cq_bw * b, uint32_t code, int len) {
++    b->acc = (b->acc << len) | code;
++    b->nacc += len;
++    while (b->nacc >= 32) {
++        cq_bw_word(b, (uint32_t) (b->acc >> (b->nacc - 32)));
++        b->nacc -= 32;
++    }
++}
++
++static void cq_bw_align(cq_bw * b) {
++    if (b->nacc > 0) {
++        cq_bw_word(b, (uint32_t) (b->acc << (32 - b->nacc)));
++        b->nacc = 0;
++    }
++}
++
++static uint64_t cq_bitpos(const cq_bw * b) {
++    return (uint64_t) b->n*32 + b->nacc;
++}
++
++typedef struct {
++    const uint32_t * w;
++    uint64_t buf;
++    int      nb;
++    size_t   next;
++} cq_br;
++
++static void cq_br_init(cq_br * r, const uint32_t * w, uint64_t bitpos) {
++    const size_t wi = (size_t) (bitpos >> 5);
++    const int    sh = (int) (bitpos & 31);
++    r->w    = w;
++    r->buf  = (((uint64_t) w[wi] << 32) | w[wi + 1]) << sh;
++    r->nb   = 64 - sh;
++    r->next = wi + 2;
++}
++
++static int cq_br_sym(cq_br * r, const uint16_t * lut, int P) {
++    if (r->nb <= 32) {
++        r->buf |= (uint64_t) r->w[r->next++] << (32 - r->nb);
++        r->nb += 32;
++    }
++    uint16_t e = lut[r->buf >> (64 - P)];
++    if (e & 0x8000) {
++        const int sub = (e >> 11) & 15;
++        e = lut[(e & 0x7FF) + (int) ((r->buf << P) >> (64 - sub))];
++    }
++    const int l = (e >> 8) & 31;
++    r->buf <<= l;
++    r->nb -= l;
++    return e & 0xFF;
++}
++
++static size_t cq_pad16(size_t x) { return (x + 15) & ~(size_t) 15; }
++
++static inline uint8_t cq_sm(uint16_t v) { return (uint8_t) (((v >> 8) & 0x80) | (v & 0x7F)); }
++static inline int     cq_ex(uint16_t v) { return (v >> 7) & 0xFF; }
++static inline uint16_t cq_bf(uint8_t sm, int ex) { return (uint16_t) (((sm & 0x80) << 8) | (ex << 7) | (sm & 0x7F)); }
++
++// ---------------------------------------------------------------------------------------------
++// BF16H
++// ---------------------------------------------------------------------------------------------
++
++
++// two symbols per lookup when both codes fit into PB bits
++static void cq_build_pair_lut(const uint8_t * len, const uint32_t * code, int PB, uint32_t * plut) {
++    const uint32_t n = 1u << PB;
++    for (uint32_t v = 0; v < n; ++v) {
++        plut[v] = 0;
++        int s0 = -1, l0 = 0;
++        for (int s = 0; s < 256; ++s) {
++            const int l = len[s];
++            if (l == 0 || l > PB) continue;
++            if ((v >> (PB - l)) == code[s]) { s0 = s; l0 = l; break; }
++        }
++        if (s0 < 0) continue;
++        const int rest = PB - l0;
++        const uint32_t v2 = v & ((1u << rest) - 1);
++        for (int s = 0; s < 256; ++s) {
++            const int l = len[s];
++            if (l == 0 || l > rest) continue;
++            if ((v2 >> (rest - l)) == code[s]) {
++                plut[v] = 0x80000000u | ((uint32_t) (l0 + l) << 16) | ((uint32_t) s << 8) | (uint32_t) s0;
++                break;
++            }
++        }
++    }
++}
++
++int ggml_cq_encode_bf16h(const uint16_t * src, int64_t ne0, int64_t ne1, int lut_bits, int n_split,
++                         uint8_t * main_out, uint8_t ** comp_out, size_t * comp_size) {
++    *comp_out  = NULL;
++    *comp_size = 0;
++    if (n_split == 0) {
++        n_split = ggml_cq_h_split(ne1); // the CUDA kernel assumes this value
++    }
++    if (ne0 % GGML_CQ_BLCK != 0 || ne1 <= 0 || lut_bits < 4 || lut_bits > 11 ||
++        (n_split != 1 && n_split != 2 && n_split != 4 && n_split != 8)) {
++        return 1;
++    }
++    // histogram
++    uint64_t freq[256] = {0};
++    const int64_t n = ne0*ne1;
++    for (int64_t i = 0; i < n; ++i) {
++        freq[cq_ex(src[i])]++;
++    }
++    uint8_t  len[256];
++    uint32_t code[256];
++    cq_huff_lengths(freq, GGML_CQ_LMAX, len);
++    cq_canonical(len, code);
++    int max_len = 0;
++    for (int s = 0; s < 256; ++s) if (len[s] > max_len) max_len = len[s];
++    const int P = lut_bits;
++    uint16_t lut[4096];
++    const int lut_n = cq_build_lut(len, code, P, lut, 4096);
++    if (lut_n == 0) {
++        return 2;
++    }
++    const int PB = GGML_CQ_PLUT_BITS;
++    uint32_t * plut = (uint32_t *) malloc(sizeof(uint32_t) << PB);
++    cq_build_pair_lut(len, code, PB, plut);
++
++    // sign/mantissa plane
++    for (int64_t r = 0; r < ne1; ++r) {
++        const uint16_t * row = src + r*ne0;
++        uint8_t * out = main_out + r*ne0;
++        for (int64_t b = 0; b < ne0; b += GGML_CQ_BLCK) {
++            for (int e = 0; e < GGML_CQ_BLCK; ++e) {
++                out[b + ggml_cq_sm_index(e)] = cq_sm(row[b + e]);
++            }
++        }
++    }
++
++    // stream
++    const int64_t na = (int64_t) GGML_CQ_LANES*n_split;
++    uint32_t * rows    = (uint32_t *) malloc((size_t) (ne1 + 1)*sizeof(uint32_t));
++    uint16_t * anchors = (uint16_t *) malloc((size_t) ne1*na*sizeof(uint16_t));
++    cq_bw bw = {0};
++    const int64_t nblk = ne0/GGML_CQ_BLCK;
++    const int S = 8/n_split;
++    uint32_t max_row_words = 0;
++    int err = 0;
++    for (int64_t r = 0; r < ne1 && !err; ++r) {
++        const uint16_t * row = src + r*ne0;
++        rows[r] = (uint32_t) bw.n;
++        if ((uint64_t) bw.n >= 0xFFFFFFF0ull) { err = 3; break; }
++        const uint64_t row_bit0 = (uint64_t) bw.n*32;
++        for (int g = 0; g < n_split && !err; ++g) {
++            for (int l = 0; l < GGML_CQ_LANES; ++l) {
++                const uint64_t rel = cq_bitpos(&bw) - row_bit0;
++                if (rel > 0xFFFF) { err = 4; break; }
++                anchors[r*na + g*GGML_CQ_LANES + l] = (uint16_t) rel;
++                for (int64_t b = 0; b < nblk; ++b) {
++                    for (int s = g*S; s < (g + 1)*S; ++s) {
++                        const int64_t p = l + 32*(8*b + s);
++                        for (int j = 0; j < 2; ++j) {
++                            const int sy = cq_ex(row[2*p + j]);
++                            cq_bw_put(&bw, code[sy], len[sy]);
++                        }
++                    }
++                }
++            }
++        }
++        cq_bw_align(&bw);
++        const uint32_t rw = (uint32_t) (bw.n - rows[r]);
++        if (rw > max_row_words) max_row_words = rw;
++    }
++    if (err) {
++        free(rows); free(anchors); free(bw.w); free(plut);
++        return err;
++    }
++    rows[ne1] = (uint32_t) bw.n;
++    for (int k = 0; k < 4; ++k) cq_bw_word(&bw, 0);
++
++    ggml_cq_header h;
++    memset(&h, 0, sizeof(h));
++    h.magic         = GGML_CQ_MAGIC;
++    h.kind          = GGML_CQ_KIND_HUFF;
++    h.ne0           = (uint32_t) ne0;
++    h.ne1           = (uint32_t) ne1;
++    h.lut_bits      = (uint32_t) P;
++    h.lut_n         = (uint32_t) lut_n;
++    h.max_len       = (uint32_t) max_len;
++    h.max_row_words = max_row_words;
++    h.plut_bits     = (uint32_t) PB;
++    h.n_split       = (uint32_t) n_split;
++    size_t off = cq_pad16(sizeof(h));
++    h.off_lut    = off; off = cq_pad16(off + (size_t) lut_n*2);
++    h.off_plut   = off; off = cq_pad16(off + ((size_t) 4 << PB));
++    h.off_rows   = off; off = cq_pad16(off + (size_t) (ne1 + 1)*4);
++    h.off_anchor = off; off = cq_pad16(off + (size_t) ne1*na*2);
++    h.off_stream = off; off = cq_pad16(off + bw.n*4);
++    h.n_words    = bw.n - 4;
++    h.total      = off;
++
++    uint8_t * comp = (uint8_t *) calloc(1, off);
++    memcpy(comp, &h, sizeof(h));
++    memcpy(comp + h.off_lut,    lut,     (size_t) lut_n*2);
++    memcpy(comp + h.off_plut,   plut,    (size_t) 4 << PB);
++    memcpy(comp + h.off_rows,   rows,    (size_t) (ne1 + 1)*4);
++    memcpy(comp + h.off_anchor, anchors, (size_t) ne1*na*2);
++    memcpy(comp + h.off_stream, bw.w,    bw.n*4);
++    free(rows); free(anchors); free(bw.w); free(plut);
++    *comp_out  = comp;
++    *comp_size = off;
++    return 0;
++}
++
++void ggml_cq_decode_row_bf16h(const uint8_t * main, const uint8_t * comp, int64_t row, int64_t ne0, uint16_t * dst) {
++    const ggml_cq_header * h = (const ggml_cq_header *) comp;
++    const uint16_t * lut     = (const uint16_t *) (comp + h->off_lut);
++    const uint32_t * plut    = (const uint32_t *) (comp + h->off_plut);
++    const uint32_t * rows    = (const uint32_t *) (comp + h->off_rows);
++    const uint16_t * anchors = (const uint16_t *) (comp + h->off_anchor);
++    const uint32_t * stream  = (const uint32_t *) (comp + h->off_stream);
++    const uint8_t  * sm      = main + row*ne0;
++    const int P  = (int) h->lut_bits;
++    const int PB = (int) h->plut_bits;
++    const int G  = (int) h->n_split;
++    const int S  = 8/G;
++    const int64_t nblk = ne0/GGML_CQ_BLCK;
++    for (int g = 0; g < G; ++g) {
++        for (int l = 0; l < GGML_CQ_LANES; ++l) {
++            cq_br br;
++            cq_br_init(&br, stream, (uint64_t) rows[row]*32 + anchors[(row*G + g)*GGML_CQ_LANES + l]);
++            for (int64_t b = 0; b < nblk; ++b) {
++                for (int s = g*S; s < (g + 1)*S; ++s) {
++                    const int64_t p = l + 32*(8*b + s);
++                    int ex[2];
++                    // same decision as the GPU kernel: pair lookup first, two single lookups otherwise
++                    if (br.nb <= 32) {
++                        br.buf |= (uint64_t) br.w[br.next++] << (32 - br.nb);
++                        br.nb += 32;
++                    }
++                    const uint32_t pe = plut[br.buf >> (64 - PB)];
++                    if (pe & 0x80000000u) {
++                        ex[0] = (int) (pe & 0xFF);
++                        ex[1] = (int) ((pe >> 8) & 0xFF);
++                        const int l2 = (int) ((pe >> 16) & 31);
++                        br.buf <<= l2;
++                        br.nb  -= l2;
++                    } else {
++                        ex[0] = cq_br_sym(&br, lut, P);
++                        ex[1] = cq_br_sym(&br, lut, P);
++                    }
++                    for (int j = 0; j < 2; ++j) {
++                        const int64_t e = 2*p + j;
++                        const int64_t bb = e - (e % GGML_CQ_BLCK);
++                        dst[e] = cq_bf(sm[bb + ggml_cq_sm_index((int) (e % GGML_CQ_BLCK))], ex[j]);
++                    }
++                }
++            }
++        }
++    }
++}
++
++// ---------------------------------------------------------------------------------------------
++// BF16W4 / BF16W3
++// ---------------------------------------------------------------------------------------------
++
++typedef struct {
++    uint32_t * v;
++    size_t n, cap;
++} cq_u32v;
++
++static void cq_u32v_push(cq_u32v * a, uint32_t x) {
++    if (a->n == a->cap) {
++        a->cap = a->cap ? a->cap*2 : 4096;
++        a->v = (uint32_t *) realloc(a->v, a->cap*sizeof(uint32_t));
++    }
++    a->v[a->n++] = x;
++}
++
++int ggml_cq_encode_bf16w4(const uint16_t * src, int64_t ne0, int64_t ne1, int lossless,
++                          void * main_out, uint8_t ** comp_out, size_t * comp_size, int64_t * n_escaped) {
++    if (comp_out)  *comp_out  = NULL;
++    if (comp_size) *comp_size = 0;
++    if (ne0 % GGML_CQ_BLCK != 0 || ne0 >= (1 << 24)) {
++        return 1;
++    }
++    const int64_t nb = ne0/GGML_CQ_BLCK;
++    block_cq_bf16w4 * out = (block_cq_bf16w4 *) main_out;
++    cq_u32v esc = {0};
++    uint32_t * esc_rows = lossless ? (uint32_t *) malloc((size_t) (ne1 + 1)*sizeof(uint32_t)) : NULL;
++    int64_t n_esc = 0;
++    for (int64_t r = 0; r < ne1; ++r) {
++        if (lossless) esc_rows[r] = (uint32_t) esc.n;
++        for (int64_t b = 0; b < nb; ++b) {
++            const uint16_t * x = src + r*ne0 + b*GGML_CQ_BLCK;
++            block_cq_bf16w4 * y = out + r*nb + b;
++            memset(y->nib, 0, sizeof(y->nib));
++            for (int s = 0; s < 8; ++s) {
++                int E = 0;
++                for (int k = 0; k < 64; ++k) {
++                    const int ex = cq_ex(x[64*s + k]);
++                    if (ex > E) E = ex;
++                }
++                y->e[s] = (uint8_t) E;
++                for (int k = 0; k < 64; ++k) {
++                    const int e = 64*s + k;
++                    const int lane = k >> 1, j = k & 1;
++                    const uint16_t v = x[e];
++                    const int ex = cq_ex(v);
++                    int c = E - ex;
++                    uint8_t smv = cq_sm(v);
++                    if (c > 14) {
++                        c = 15;
++                        if (ex != 0) {
++                            n_esc++;
++                            if (lossless) {
++                                cq_u32v_push(&esc, (uint32_t) (((b*GGML_CQ_BLCK + e) << 8) | ex));
++                            } else {
++                                smv &= 0x80; // flush to +-0
++                            }
++                        }
++                    }
++                    y->sm[ggml_cq_sm_index(e)] = smv;
++                    y->nib[lane*8 + s] |= (uint8_t) (c << (4*j));
++                }
++            }
++        }
++    }
++    if (n_escaped) *n_escaped = n_esc;
++    if (lossless) {
++        esc_rows[ne1] = (uint32_t) esc.n;
++        ggml_cq_header h;
++        memset(&h, 0, sizeof(h));
++        h.magic = GGML_CQ_MAGIC;
++        h.kind  = GGML_CQ_KIND_ESCAPE;
++        h.ne0   = (uint32_t) ne0;
++        h.ne1   = (uint32_t) ne1;
++        size_t off = cq_pad16(sizeof(h));
++        h.off_esc_rows = off; off = cq_pad16(off + (size_t) (ne1 + 1)*4);
++        h.off_esc      = off; off = cq_pad16(off + esc.n*4 + 16);
++        h.n_esc        = esc.n;
++        h.total        = off;
++        uint8_t * comp = (uint8_t *) calloc(1, off);
++        memcpy(comp, &h, sizeof(h));
++        memcpy(comp + h.off_esc_rows, esc_rows, (size_t) (ne1 + 1)*4);
++        if (esc.n) memcpy(comp + h.off_esc, esc.v, esc.n*4);
++        *comp_out  = comp;
++        *comp_size = off;
++    }
++    free(esc.v);
++    free(esc_rows);
++    return 0;
++}
++
++static int cq_esc_lookup(const uint8_t * comp, int64_t row, int64_t col) {
++    if (!comp) return 0;
++    const ggml_cq_header * h = (const ggml_cq_header *) comp;
++    const uint32_t * er = (const uint32_t *) (comp + h->off_esc_rows);
++    const uint32_t * ev = (const uint32_t *) (comp + h->off_esc);
++    for (uint32_t i = er[row]; i < er[row + 1]; ++i) {
++        if ((int64_t) (ev[i] >> 8) == col) return (int) (ev[i] & 0xFF);
++    }
++    return 0;
++}
++
++void ggml_cq_decode_row_bf16w4(const void * main_row, const uint8_t * comp, int64_t row, int64_t ne0, uint16_t * dst) {
++    const block_cq_bf16w4 * x = (const block_cq_bf16w4 *) main_row;
++    const int64_t nb = ne0/GGML_CQ_BLCK;
++    for (int64_t b = 0; b < nb; ++b) {
++        for (int e = 0; e < GGML_CQ_BLCK; ++e) {
++            const int s = e >> 6, k = e & 63, lane = k >> 1, j = k & 1;
++            const int c = (x[b].nib[lane*8 + s] >> (4*j)) & 15;
++            const int ex = c == 15 ? cq_esc_lookup(comp, row, b*GGML_CQ_BLCK + e) : x[b].e[s] - c;
++            dst[b*GGML_CQ_BLCK + e] = cq_bf(x[b].sm[ggml_cq_sm_index(e)], ex);
++        }
++    }
++}
++
++void ggml_cq_dequantize_row_bf16w4(const void * x, float * y, int64_t k) {
++    uint16_t tmp[GGML_CQ_BLCK];
++    const block_cq_bf16w4 * xb = (const block_cq_bf16w4 *) x;
++    for (int64_t b = 0; b < k/GGML_CQ_BLCK; ++b) {
++        ggml_cq_decode_row_bf16w4(xb + b, NULL, 0, GGML_CQ_BLCK, tmp);
++        for (int e = 0; e < GGML_CQ_BLCK; ++e) {
++            const uint32_t u = (uint32_t) tmp[e] << 16;
++            memcpy(&y[b*GGML_CQ_BLCK + e], &u, 4);
++        }
++    }
++}
++
++int ggml_cq_encode_bf16w3(const uint16_t * src, int64_t ne0, int64_t ne1, void * main_out, int64_t * n_flushed) {
++    if (ne0 % GGML_CQ_BLCK != 0) {
++        return 1;
++    }
++    const int64_t nb = ne0/GGML_CQ_BLCK;
++    block_cq_bf16w3 * out = (block_cq_bf16w3 *) main_out;
++    int64_t nfl = 0;
++    for (int64_t r = 0; r < ne1; ++r) {
++        for (int64_t b = 0; b < nb; ++b) {
++            const uint16_t * x = src + r*ne0 + b*GGML_CQ_BLCK;
++            block_cq_bf16w3 * y = out + r*nb + b;
++            uint64_t codes[GGML_CQ_LANES] = {0};
++            for (int s = 0; s < 8; ++s) {
++                int E = 0;
++                for (int k = 0; k < 64; ++k) {
++                    const int ex = cq_ex(x[64*s + k]);
++                    if (ex > E) E = ex;
++                }
++                y->e[s] = (uint8_t) E;
++                for (int k = 0; k < 64; ++k) {
++                    const int e = 64*s + k;
++                    const int lane = k >> 1, j = k & 1;
++                    const uint16_t v = x[e];
++                    const int ex = cq_ex(v);
++                    int c = E - ex;
++                    uint8_t smv = cq_sm(v);
++                    if (c > 6) {
++                        c = 7;
++                        if (ex != 0) {
++                            nfl++;
++                            smv &= 0x80;
++                        }
++                    }
++                    y->sm[ggml_cq_sm_index(e)] = smv;
++                    codes[lane] |= (uint64_t) c << (3*(2*s + j));
++                }
++            }
++            for (int lane = 0; lane < GGML_CQ_LANES; ++lane) {
++                for (int q = 0; q < 6; ++q) {
++                    y->c3[lane*6 + q] = (uint8_t) (codes[lane] >> (8*q));
++                }
++            }
++        }
++    }
++    if (n_flushed) *n_flushed = nfl;
++    return 0;
++}
++
++void ggml_cq_decode_row_bf16w3(const void * main_row, int64_t ne0, uint16_t * dst) {
++    const block_cq_bf16w3 * x = (const block_cq_bf16w3 *) main_row;
++    const int64_t nb = ne0/GGML_CQ_BLCK;
++    for (int64_t b = 0; b < nb; ++b) {
++        for (int e = 0; e < GGML_CQ_BLCK; ++e) {
++            const int s = e >> 6, k = e & 63, lane = k >> 1, j = k & 1;
++            uint64_t codes = 0;
++            for (int q = 0; q < 6; ++q) codes |= (uint64_t) x[b].c3[lane*6 + q] << (8*q);
++            const int c = (int) ((codes >> (3*(2*s + j))) & 7);
++            const int ex = c == 7 ? 0 : x[b].e[s] - c;
++            dst[b*GGML_CQ_BLCK + e] = cq_bf(x[b].sm[ggml_cq_sm_index(e)], ex);
++        }
++    }
++}
++
++void ggml_cq_dequantize_row_bf16w3(const void * x, float * y, int64_t k) {
++    uint16_t tmp[GGML_CQ_BLCK];
++    const block_cq_bf16w3 * xb = (const block_cq_bf16w3 *) x;
++    for (int64_t b = 0; b < k/GGML_CQ_BLCK; ++b) {
++        ggml_cq_decode_row_bf16w3(xb + b, GGML_CQ_BLCK, tmp);
++        for (int e = 0; e < GGML_CQ_BLCK; ++e) {
++            const uint32_t u = (uint32_t) tmp[e] << 16;
++            memcpy(&y[b*GGML_CQ_BLCK + e], &u, 4);
++        }
++    }
++}
+diff --git a/ggml/src/ggml-cq.h b/ggml/src/ggml-cq.h
+new file mode 100644
+index 00000000..70b02599
+--- /dev/null
++++ b/ggml/src/ggml-cq.h
+@@ -0,0 +1,138 @@
++// ggml-cq.h - compressed BF16 weight formats (research branch cq/weights-compress)
++//
++// Three tensor types re-code BF16 weights. All of them keep the 8 bits sign|mantissa7 of every value
++// raw and only re-code the 8-bit exponent:
++//
++//   GGML_TYPE_CQ_BF16H  lossless. The exponent is coded with a per-tensor canonical Huffman code
++//                       (same idea as DFloat11 [Zhang et al. 2025]; ZipNN and ZipServ are related
++//                       prior work). The code stream lives in a companion tensor "<name>.cqx".
++//   GGML_TYPE_CQ_BF16W4 fixed rate: per 64 consecutive values the largest exponent E is stored once and
++//                       every value stores c = E - e in 4 bits (c = 15: escape). With a companion escape
++//                       list the format is lossless; without it escaped values decode to +-0.
++//   GGML_TYPE_CQ_BF16W3 same with 3-bit offsets (c = 7: escape). Used lossy (no escape list).
++//
++// Layout of the sign|mantissa plane (all three types), per block of 512 consecutive values of a row:
++// byte b = lane*16 + s*2 + j holds element 64*s + 2*lane + j (lane = 0..31, s = 0..7, j = 0..1).
++// This is the order in which lane `lane` of a CUDA warp consumes the row in the GEMV kernel: at warp
++// step m it handles the pair p = lane + 32*m, which is exactly the pair that thread (p mod 256) of
++// llama.cpp's BF16 mul_mat_vec_f kernel handles in iteration p / 256. The kernel can therefore
++// reproduce the base kernel's floating-point summation order bit for bit.
++//
++// The Huffman stream of a row is ordered the same way: the sub-stream of lane l contains the exponents
++// of elements 2p, 2p+1 for p = l, l+32, l+64, ... One u16 anchor per (row, lane) gives the bit offset of
++// that sub-stream relative to the 32-bit word where the row starts.
++#pragma once
++
++#include "ggml.h"
++
++#include <stdint.h>
++#include <stddef.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define GGML_CQ_BLCK   512
++#define GGML_CQ_LANES  32
++#define GGML_CQ_MAGIC  0x31585143u // "CQX1"
++#define GGML_CQ_LMAX   16          // longest Huffman code
++#define GGML_CQ_PLUT_BITS 11       // pair LUT index bits
++#define GGML_CQ_SUFFIX ".cqx"      // companion tensor name suffix
++
++enum ggml_cq_kind {
++    GGML_CQ_KIND_HUFF   = 1, // exponent Huffman stream (CQ_BF16H)
++    GGML_CQ_KIND_ESCAPE = 2, // escape list (CQ_BF16W4 lossless)
++};
++
++typedef struct {
++    uint8_t sm [GGML_CQ_BLCK];      // sign|mantissa
++    uint8_t nib[GGML_CQ_BLCK/2];    // lane*8 + s: low nibble = j 0, high nibble = j 1
++    uint8_t e  [GGML_CQ_BLCK/64];   // largest exponent of each 64-value step
++} block_cq_bf16w4;                  // 776 bytes, 12.125 bits/value
++
++typedef struct {
++    uint8_t sm[GGML_CQ_BLCK];
++    uint8_t c3[GGML_CQ_BLCK*3/8];   // lane*6 bytes: code k = 2*s + j at bits 3k..3k+2 (little endian)
++    uint8_t e [GGML_CQ_BLCK/64];
++} block_cq_bf16w3;                  // 712 bytes, 11.125 bits/value
++
++// companion tensor (type I8, 1-D) starts with this header; offsets are in bytes from the header start
++typedef struct {
++    uint32_t magic;
++    uint32_t kind;
++    uint32_t ne0;           // values per row
++    uint32_t ne1;           // rows
++    uint32_t lut_bits;      // HUFF: bits of the primary LUT index (P)
++    uint32_t lut_n;         // HUFF: number of u16 LUT entries (primary + secondary)
++    uint32_t max_len;       // HUFF: longest code
++    uint32_t max_row_words; // HUFF: largest number of 32-bit words of one row
++    uint64_t off_lut;       // HUFF: u16[lut_n]
++    uint64_t off_rows;      // HUFF: u32[ne1 + 1], first stream word of each row (rows start word-aligned)
++    uint64_t off_anchor;    // HUFF: u16[ne1*32], bit offset of each lane sub-stream relative to the row start
++    uint64_t off_stream;    // HUFF: u32[n_words + 4] (4 zero words of padding), bit 31 of a word comes first
++    uint64_t n_words;       // HUFF
++    uint64_t n_esc;         // ESCAPE: number of escapes
++    uint64_t off_esc_rows;  // ESCAPE: u32[ne1 + 1], first escape of each row
++    uint64_t off_esc;       // ESCAPE: u32[n_esc] = (column << 8) | exponent, sorted by column within a row
++    uint64_t total;         // total companion bytes
++    uint64_t off_plut;      // HUFF: u32[1 << plut_bits] pair LUT (two symbols per lookup), see below
++    uint32_t plut_bits;     // HUFF: index bits of the pair LUT
++    uint32_t n_split;       // HUFF: sub-streams per (row, lane): 1, 2, 4 or 8 (warps per row in the GEMV)
++    uint64_t reserved;
++} ggml_cq_header;           // 128 bytes
++
++// HUFF stream order: for each row, for g in 0..n_split-1, for lane in 0..31: the exponents of the pairs
++// p = lane + 32*(8*b + s) for every 512-block b and s in [g*8/n_split, (g+1)*8/n_split), two symbols per pair.
++// anchors: u16[ne1*32*n_split], index (row*n_split + g)*32 + lane, bit offset relative to the row start word.
++//
++// pair LUT entry (u32), indexed by the next plut_bits bits: bit 31 = valid (both codes fit), bits 0..7 = first
++// symbol, bits 8..15 = second symbol, bits 16..20 = total length. Invalid entries: decode two single symbols.
++//
++// LUT entry (u16):
++//   bit 15 == 0: direct, symbol = bits 0..7, code length = bits 8..12
++//   bit 15 == 1: indirect, secondary table at index bits 0..10, indexed by the next (bits 11..14) bits after
++//                the first lut_bits bits; secondary entries are direct entries with the full code length.
++
++// --- encoders (CPU). Return 0 on success, non-zero if the tensor cannot be coded (then keep it BF16). ---
++
++// src: ne1 rows of ne0 BF16 values (natural order). ne0 % 512 == 0.
++// main_out: ne0*ne1 bytes. comp_out: allocated with malloc, caller frees.
++// n_split: 1, 2, 4 or 8 (0 = choose from the number of rows)
++GGML_API int ggml_cq_encode_bf16h(const uint16_t * src, int64_t ne0, int64_t ne1, int lut_bits, int n_split,
++                         uint8_t * main_out, uint8_t ** comp_out, size_t * comp_size);
++
++// main_out: (ne0/512)*ne1 blocks. If lossless != 0 an escape companion is produced (may have n_esc == 0),
++// else *comp_out = NULL and escaped values become +-0. n_flushed (optional) receives the number of
++// non-zero values that were escaped.
++GGML_API int ggml_cq_encode_bf16w4(const uint16_t * src, int64_t ne0, int64_t ne1, int lossless,
++                          void * main_out, uint8_t ** comp_out, size_t * comp_size, int64_t * n_escaped);
++GGML_API int ggml_cq_encode_bf16w3(const uint16_t * src, int64_t ne0, int64_t ne1,
++                          void * main_out, int64_t * n_flushed);
++
++// --- decoders (CPU reference). comp may be NULL for W4/W3. dst: ne0 BF16 values of row `row`. ---
++GGML_API void ggml_cq_decode_row_bf16h (const uint8_t * main, const uint8_t * comp, int64_t row, int64_t ne0, uint16_t * dst);
++GGML_API void ggml_cq_decode_row_bf16w4(const void * main_row, const uint8_t * comp, int64_t row, int64_t ne0, uint16_t * dst);
++GGML_API void ggml_cq_decode_row_bf16w3(const void * main_row, int64_t ne0, uint16_t * dst);
++
++// to_float trait for the self-contained fixed-rate types (no escape list)
++GGML_API void ggml_cq_dequantize_row_bf16w4(const void * x, float * y, int64_t k);
++GGML_API void ggml_cq_dequantize_row_bf16w3(const void * x, float * y, int64_t k);
++
++// helpers
++
++// number of sub-streams per (row, lane) of a CQ_BF16H tensor = warps per row in the GEMV kernel. Fixed function
++// of the row count so that the CUDA host code knows it without reading the companion header.
++static inline int ggml_cq_h_split(int64_t ne1) {
++    if (ne1 >= 8192) return 1;
++    if (ne1 >= 4096) return 2;
++    return 4;
++}
++
++static inline int ggml_cq_sm_index(int e) { // natural index within a 512 block -> byte index in the sm plane
++    const int s = e >> 6, r = e & 63, lane = r >> 1, j = r & 1;
++    return lane*16 + s*2 + j;
++}
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/ggml/src/ggml-cuda/cqw.cu b/ggml/src/ggml-cuda/cqw.cu
+new file mode 100644
+index 00000000..43b5fff2
+--- /dev/null
++++ b/ggml/src/ggml-cuda/cqw.cu
+@@ -0,0 +1,680 @@
++// cq/weights-compress: CUDA kernels for compressed BF16 weights (see ggml/src/ggml-cq.h)
++//
++// GEMV (batch 1): G warps per row (G = 1, 2, 4 or 8). At warp step m = 8*b + s, lane l handles the value pair
++// p = l + 32*m. This is the pair that thread (p mod 256) of the BF16 mul_mat_vec_f kernel (block size 256 for
++// ne00 % 512 == 0) handles in its iteration p / 256 = b. Warp g of a row handles the steps s in [g*8/G, (g+1)*8/G),
++// i.e. the "virtual warps" s of the base kernel, and lane l keeps the partial sum of virtual thread l + 32*s in the
++// same order as the base kernel. The two-level reduction of the base kernel (warp butterfly, then a butterfly over
++// the 8 warp sums padded with zeros) is reproduced exactly, so the result is bit-identical to the BF16 kernel on the
++// decoded weights, independent of G.
++//
++// Prefill (batch > 1): the tensor is decoded into a BF16 scratch buffer and the regular BF16 path is used.
++
++#include "cqw.cuh"
++#include "unary.cuh"
++#include "../ggml-cq.h"
++
++#include <cstdlib>
++
++#define CQ_WARPS   8
++#define CQ_LUT_MAX 2048
++#define CQ_P       8                  // single-symbol LUT index bits (the converter only writes 8)
++#define CQ_PB      GGML_CQ_PLUT_BITS  // pair LUT index bits
++
++static __device__ __forceinline__ float cq_make(const uint32_t sm, const uint32_t ex) {
++    return __uint_as_float(((sm & 0x80u) << 24) | (ex << 23) | ((sm & 0x7Fu) << 16));
++}
++
++// load NB = 2*S bytes (S steps x 2 values of sign|mantissa) into 32-bit words
++template <int S>
++static __device__ __forceinline__ void cq_load_sm(const uint8_t * p, uint32_t * w) {
++    if constexpr (S == 8) {
++        const uint2 a = ((const uint2 *) p)[0];
++        const uint2 c = ((const uint2 *) p)[1];
++        w[0] = a.x; w[1] = a.y; w[2] = c.x; w[3] = c.y;
++    } else if constexpr (S == 4) {
++        const uint2 a = *((const uint2 *) p);
++        w[0] = a.x; w[1] = a.y;
++    } else if constexpr (S == 2) {
++        w[0] = *((const uint32_t *) p);
++    } else {
++        w[0] = *((const uint16_t *) p);
++    }
++}
++
++// sign|mantissa pair of local step i
++template <int S>
++static __device__ __forceinline__ uint32_t cq_sm_get(const uint32_t * w, const int i) {
++    return w[i/2] >> (16*(i & 1));
++}
++
++// load S bytes (one per step) into 32-bit words
++template <int S>
++static __device__ __forceinline__ void cq_load_bytes(const uint8_t * p, uint32_t * w) {
++    if constexpr (S == 8) {
++        const uint2 a = *((const uint2 *) p);
++        w[0] = a.x; w[1] = a.y;
++    } else if constexpr (S == 4) {
++        w[0] = *((const uint32_t *) p);
++    } else if constexpr (S == 2) {
++        w[0] = *((const uint16_t *) p);
++    } else {
++        w[0] = *p;
++    }
++}
++
++template <int S>
++static __device__ __forceinline__ uint32_t cq_byte_get(const uint32_t * w, const int i) {
++    return (w[i/4] >> (8*(i & 3))) & 0xFFu;
++}
++
++// ---------------------------------------------------------------------------------------------
++// decoders. S = steps per warp, s0 = first step of this warp.
++// init(row) -> load(b) [prefetch into *_n registers] -> next_block() -> pair(i) for i = 0..S-1
++// ---------------------------------------------------------------------------------------------
++
++struct cq_luts {
++    const uint16_t * lut;   // single-symbol LUT (shared memory)
++    const uint32_t * plut;  // pair LUT (shared memory)
++};
++
++template <int S>
++struct cq_dec_h {
++    static constexpr bool uses_lut = true;
++    static constexpr int  NW = (2*S + 3)/4;
++
++    const uint32_t * __restrict__ stream;
++    const uint8_t  * __restrict__ main_row;
++    uint32_t cur, nxt, pos, next;
++    int      s0;
++    uint32_t smw[NW], smn[NW];
++
++    __device__ __forceinline__ void init(const uint8_t * main, const uint8_t * comp, const int row, const int ncols, const int lane, const int g) {
++        const ggml_cq_header * h = (const ggml_cq_header *) comp;
++        stream = (const uint32_t *) (comp + h->off_stream);
++        const uint32_t * rows    = (const uint32_t *) (comp + h->off_rows);
++        const uint16_t * anchors = (const uint16_t *) (comp + h->off_anchor);
++        constexpr int G = 8/S;
++        main_row = main + (size_t) row*ncols;
++        s0 = g*S;
++        const uint32_t bit = __ldg(rows + row)*32u + __ldg(anchors + ((size_t) row*G + g)*GGML_CQ_LANES + lane);
++        const uint32_t wi  = bit >> 5;
++        pos  = bit & 31;
++        cur  = __ldg(stream + wi);
++        nxt  = __ldg(stream + wi + 1);
++        next = wi + 2;
++    }
++
++    __device__ __forceinline__ void adv(const uint32_t l) {
++        pos += l;
++        if (pos >= 32) {
++            pos -= 32;
++            cur = nxt;
++            nxt = __ldg(stream + next);
++            next++;
++        }
++    }
++
++    __device__ __forceinline__ uint32_t sym(const uint16_t * __restrict__ lut) {
++        const uint32_t peek = __funnelshift_l(nxt, cur, pos);
++        uint32_t e = lut[peek >> (32 - CQ_P)];
++        if (e & 0x8000u) {
++            const uint32_t sub = (e >> 11) & 15;
++            e = lut[(e & 0x7FFu) + ((peek << CQ_P) >> (32 - sub))];
++        }
++        adv((e >> 8) & 31);
++        return e & 0xFFu;
++    }
++
++    __device__ __forceinline__ void load(const int b, const int lane) {
++        cq_load_sm<S>(main_row + (size_t) b*GGML_CQ_BLCK + lane*16 + 2*s0, smn);
++    }
++    __device__ __forceinline__ void next_block() {
++#pragma unroll
++        for (int k = 0; k < NW; ++k) smw[k] = smn[k];
++    }
++
++    __device__ __forceinline__ void pair(const int i, const int b, const int lane, const int row, const cq_luts & L, float & x0, float & x1) {
++        const uint32_t sm   = cq_sm_get<S>(smw, i);
++        const uint32_t peek = __funnelshift_l(nxt, cur, pos);
++        const uint32_t pe   = L.plut[peek >> (32 - CQ_PB)];
++        uint32_t e0, e1;
++        if (pe & 0x80000000u) {
++            e0 = pe & 0xFFu;
++            e1 = (pe >> 8) & 0xFFu;
++            adv((pe >> 16) & 31);
++        } else {
++            e0 = sym(L.lut);
++            e1 = sym(L.lut);
++        }
++        x0 = cq_make(sm,      e0);
++        x1 = cq_make(sm >> 8, e1);
++        GGML_UNUSED(b); GGML_UNUSED(lane); GGML_UNUSED(row);
++    }
++};
++
++static __device__ __noinline__ uint32_t cq_esc_lookup(const uint32_t * esc_rows, const uint32_t * esc, const int row, const uint32_t col) {
++    if (!esc_rows) {
++        return 0;
++    }
++    const uint32_t i1 = __ldg(esc_rows + row + 1);
++    for (uint32_t i = __ldg(esc_rows + row); i < i1; ++i) {
++        const uint32_t u = __ldg(esc + i);
++        if ((u >> 8) == col) {
++            return u & 0xFFu;
++        }
++    }
++    return 0;
++}
++
++template <int S>
++struct cq_dec_w4 {
++    static constexpr bool uses_lut = false;
++    static constexpr int  NW = (2*S + 3)/4;
++    static constexpr int  NB = (S + 3)/4;
++
++    const uint8_t  * __restrict__ blk_row;
++    const uint32_t * esc_rows;
++    const uint32_t * esc;
++    int s0;
++    uint32_t smw[NW], smn[NW], nbw[NB], nbn[NB], ew[NB], en[NB];
++
++    __device__ __forceinline__ void init(const uint8_t * main, const uint8_t * comp, const int row, const int ncols, const int lane, const int g) {
++        blk_row = main + (size_t) row*(ncols/GGML_CQ_BLCK)*sizeof(block_cq_bf16w4);
++        s0 = g*S;
++        if (comp) {
++            const ggml_cq_header * h = (const ggml_cq_header *) comp;
++            esc_rows = (const uint32_t *) (comp + h->off_esc_rows);
++            esc      = (const uint32_t *) (comp + h->off_esc);
++        } else {
++            esc_rows = nullptr;
++            esc      = nullptr;
++        }
++        GGML_UNUSED(lane);
++    }
++
++    __device__ __forceinline__ void load(const int b, const int lane) {
++        const uint8_t * bp = blk_row + (size_t) b*sizeof(block_cq_bf16w4);
++        cq_load_sm<S>   (bp + lane*16 + 2*s0, smn);
++        cq_load_bytes<S>(bp + GGML_CQ_BLCK + lane*8 + s0, nbn);
++        cq_load_bytes<S>(bp + GGML_CQ_BLCK + GGML_CQ_BLCK/2 + s0, en);
++    }
++    __device__ __forceinline__ void next_block() {
++#pragma unroll
++        for (int k = 0; k < NW; ++k) smw[k] = smn[k];
++#pragma unroll
++        for (int k = 0; k < NB; ++k) { nbw[k] = nbn[k]; ew[k] = en[k]; }
++    }
++
++    __device__ __forceinline__ void pair(const int i, const int b, const int lane, const int row, const cq_luts & L, float & x0, float & x1) {
++        const uint32_t sm = cq_sm_get<S>(smw, i);
++        const uint32_t nb = cq_byte_get<S>(nbw, i);
++        const uint32_t E  = cq_byte_get<S>(ew, i);
++        const uint32_t c0 = nb & 15u, c1 = nb >> 4;
++        uint32_t e0 = E - c0;
++        uint32_t e1 = E - c1;
++        if (c0 == 15u || c1 == 15u) { // rare: escape (lossless) or flushed value (lossy)
++            const uint32_t col = (uint32_t) (2*(lane + 32*(b*8 + s0 + i)));
++            if (c0 == 15u) e0 = cq_esc_lookup(esc_rows, esc, row, col + 0);
++            if (c1 == 15u) e1 = cq_esc_lookup(esc_rows, esc, row, col + 1);
++        }
++        x0 = cq_make(sm,      e0);
++        x1 = cq_make(sm >> 8, e1);
++        GGML_UNUSED(L);
++    }
++};
++
++template <int S>
++struct cq_dec_w3 {
++    static constexpr bool uses_lut = false;
++    static constexpr int  NW = (2*S + 3)/4;
++    static constexpr int  NB = (S + 3)/4;
++
++    const uint8_t * __restrict__ blk_row;
++    int s0;
++    uint32_t smw[NW], smn[NW], ew[NB], en[NB];
++    uint64_t codes, codesn;
++
++    __device__ __forceinline__ void init(const uint8_t * main, const uint8_t * comp, const int row, const int ncols, const int lane, const int g) {
++        blk_row = main + (size_t) row*(ncols/GGML_CQ_BLCK)*sizeof(block_cq_bf16w3);
++        s0 = g*S;
++        GGML_UNUSED(comp); GGML_UNUSED(lane);
++    }
++
++    __device__ __forceinline__ void load(const int b, const int lane) {
++        const uint8_t * bp = blk_row + (size_t) b*sizeof(block_cq_bf16w3);
++        cq_load_sm<S>(bp + lane*16 + 2*s0, smn);
++        const uint16_t * c = (const uint16_t *) (bp + GGML_CQ_BLCK + 6*lane);
++        codesn = (uint64_t) c[0] | ((uint64_t) c[1] << 16) | ((uint64_t) c[2] << 32);
++        cq_load_bytes<S>(bp + GGML_CQ_BLCK + GGML_CQ_BLCK*3/8 + s0, en);
++    }
++    __device__ __forceinline__ void next_block() {
++#pragma unroll
++        for (int k = 0; k < NW; ++k) smw[k] = smn[k];
++#pragma unroll
++        for (int k = 0; k < NB; ++k) ew[k] = en[k];
++        codes = codesn;
++    }
++
++    __device__ __forceinline__ void pair(const int i, const int b, const int lane, const int row, const cq_luts & L, float & x0, float & x1) {
++        const uint32_t sm = cq_sm_get<S>(smw, i);
++        const uint32_t E  = cq_byte_get<S>(ew, i);
++        const int      s  = s0 + i;
++        const uint32_t c0 = (uint32_t) (codes >> (6*s))     & 7u;
++        const uint32_t c1 = (uint32_t) (codes >> (6*s + 3)) & 7u;
++        const uint32_t e0 = c0 == 7u ? 0u : E - c0;
++        const uint32_t e1 = c1 == 7u ? 0u : E - c1;
++        x0 = cq_make(sm,      e0);
++        x1 = cq_make(sm >> 8, e1);
++        GGML_UNUSED(b); GGML_UNUSED(lane); GGML_UNUSED(row); GGML_UNUSED(L);
++    }
++};
++
++// shared memory tables of one matrix (Huffman only)
++struct cq_smem_luts {
++    uint16_t lut [CQ_LUT_MAX];
++    uint32_t plut[1 << CQ_PB];
++};
++
++static __device__ __forceinline__ void cq_load_luts(const uint8_t * comp, cq_smem_luts & t) {
++    const ggml_cq_header * h = (const ggml_cq_header *) comp;
++    const int n = min((int) h->lut_n, CQ_LUT_MAX);
++    const uint16_t * lut  = (const uint16_t *) (comp + h->off_lut);
++    const uint32_t * plut = (const uint32_t *) (comp + h->off_plut);
++    for (int i = threadIdx.x; i < n; i += blockDim.x) {
++        t.lut[i] = lut[i];
++    }
++    for (int i = threadIdx.x; i < (1 << CQ_PB); i += blockDim.x) {
++        t.plut[i] = plut[i];
++    }
++}
++
++template <template <int> class dec_tt, bool has_gate, int G>
++static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_mmv_kernel(
++        const uint8_t * xm, const uint8_t * xc, const uint8_t * gm, const uint8_t * gc,
++        const float * __restrict__ y, float * __restrict__ dst,
++        const float * __restrict__ x_bias, const float * __restrict__ gate_bias,
++        const int ncols, const int nrows, const int glu_op, const float glu_limit) {
++    constexpr int S   = 8/G;          // steps (virtual warps) per warp
++    constexpr int RPB = CQ_WARPS/G;   // rows per block iteration
++    using dec_t = dec_tt<S>;
++    constexpr bool LUT = dec_t::uses_lut;
++    constexpr int  NL  = LUT ? (has_gate ? 2 : 1) : 0;
++
++    extern __shared__ char cq_smem_raw[];
++    cq_smem_luts * tabs = (cq_smem_luts *) cq_smem_raw;
++    float * red = (float *) (cq_smem_raw + NL*sizeof(cq_smem_luts)); // [2][RPB][8]
++
++    if constexpr (LUT) {
++        cq_load_luts(xc, tabs[0]);
++        if constexpr (has_gate) {
++            cq_load_luts(gc, tabs[NL - 1]);
++        }
++        __syncthreads();
++    }
++    cq_luts Lx = {}, Lg = {};
++    if constexpr (LUT) {
++        Lx = { tabs[0].lut,      tabs[0].plut };
++        Lg = { tabs[NL - 1].lut, tabs[NL - 1].plut };
++    }
++
++    const int lane = threadIdx.x % WARP_SIZE;
++    const int warp = threadIdx.x / WARP_SIZE;
++    const int g    = warp % G;
++    const int rl   = warp / G;
++    const int nblk = ncols / GGML_CQ_BLCK;
++    const float2 * y2 = (const float2 *) y;
++
++    for (int rbase = blockIdx.x*RPB; rbase < nrows; rbase += gridDim.x*RPB) {
++        const int  row   = rbase + rl;
++        const bool valid = row < nrows;
++        const int  rowc  = valid ? row : nrows - 1;
++
++        dec_t dx;
++        [[maybe_unused]] dec_t dg;
++        dx.init(xm, xc, rowc, ncols, lane, g);
++        dx.load(0, lane);
++        if constexpr (has_gate) {
++            dg.init(gm, gc, rowc, ncols, lane, g);
++            dg.load(0, lane);
++        }
++        float sx[S];
++        [[maybe_unused]] float sg[S];
++#pragma unroll
++        for (int i = 0; i < S; ++i) {
++            sx[i] = 0.0f;
++            sg[i] = 0.0f;
++        }
++
++        for (int b = 0; b < nblk; ++b) {
++            dx.next_block();
++            if constexpr (has_gate) {
++                dg.next_block();
++            }
++            if (b + 1 < nblk) {
++                dx.load(b + 1, lane);
++                if constexpr (has_gate) {
++                    dg.load(b + 1, lane);
++                }
++            }
++#pragma unroll
++            for (int i = 0; i < S; ++i) {
++                const float2 yv = y2[lane + 32*(b*8 + g*S + i)];
++                float x0, x1;
++                dx.pair(i, b, lane, rowc, Lx, x0, x1);
++                ggml_cuda_mad(sx[i], x0, yv.x);
++                ggml_cuda_mad(sx[i], x1, yv.y);
++                if constexpr (has_gate) {
++                    float g0, g1;
++                    dg.pair(i, b, lane, rowc, Lg, g0, g1);
++                    ggml_cuda_mad(sg[i], g0, yv.x);
++                    ggml_cuda_mad(sg[i], g1, yv.y);
++                }
++            }
++        }
++
++        // reduction: identical to mul_mat_vec_f with block size 256
++        float value = 0.0f, gate_value = 0.0f;
++        bool  writer;
++        if constexpr (G == 1) {
++#pragma unroll
++            for (int i = 0; i < 8; ++i) {
++                sx[i] = warp_reduce_sum<WARP_SIZE>(sx[i]);
++                if constexpr (has_gate) {
++                    sg[i] = warp_reduce_sum<WARP_SIZE>(sg[i]);
++                }
++            }
++            float v = 0.0f, vg = 0.0f;
++#pragma unroll
++            for (int i = 0; i < 8; ++i) {
++                if (lane == i) {
++                    v = sx[i];
++                    if constexpr (has_gate) {
++                        vg = sg[i];
++                    }
++                }
++            }
++            value = warp_reduce_sum<WARP_SIZE>(v);
++            if constexpr (has_gate) {
++                gate_value = warp_reduce_sum<WARP_SIZE>(vg);
++            }
++            writer = valid && lane == 0;
++        } else {
++#pragma unroll
++            for (int i = 0; i < S; ++i) {
++                const float v = warp_reduce_sum<WARP_SIZE>(sx[i]);
++                if (lane == 0) {
++                    red[rl*8 + g*S + i] = v;
++                }
++                if constexpr (has_gate) {
++                    const float vg = warp_reduce_sum<WARP_SIZE>(sg[i]);
++                    if (lane == 0) {
++                        red[RPB*8 + rl*8 + g*S + i] = vg;
++                    }
++                }
++            }
++            __syncthreads();
++            if (g == 0) {
++                value = warp_reduce_sum<WARP_SIZE>(lane < 8 ? red[rl*8 + lane] : 0.0f);
++                if constexpr (has_gate) {
++                    gate_value = warp_reduce_sum<WARP_SIZE>(lane < 8 ? red[RPB*8 + rl*8 + lane] : 0.0f);
++                }
++            }
++            __syncthreads();
++            writer = valid && g == 0 && lane == 0;
++        }
++
++        if (writer) {
++            if (x_bias) {
++                value += x_bias[row];
++            }
++            if constexpr (has_gate) {
++                if (gate_bias) {
++                    gate_value += gate_bias[row];
++                }
++                switch (glu_op) {
++                    case GGML_GLU_OP_SWIGLU:
++                        value *= ggml_cuda_op_silu_single(gate_value);
++                        break;
++                    case GGML_GLU_OP_GEGLU:
++                        value *= ggml_cuda_op_gelu_single(gate_value);
++                        break;
++                    case GGML_GLU_OP_SWIGLU_OAI:
++                        value = ggml_cuda_op_swiglu_oai_single(gate_value, value);
++                        break;
++                    case GGML_GLU_OP_SWIGLU_CLAMP:
++                        value = ggml_cuda_op_swiglu_clamp_single(gate_value, value, glu_limit);
++                        break;
++                    default:
++                        break;
++                }
++            }
++            dst[row] = value;
++        }
++        GGML_UNUSED(gate_value);
++    }
++    GGML_UNUSED(glu_limit);
++}
++
++template <template <int> class dec_tt, int G>
++static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_to_bf16_kernel(
++        const uint8_t * xm, const uint8_t * xc, uint32_t * __restrict__ dst, const int ncols, const int nrows) {
++    constexpr int S   = 8/G;
++    constexpr int RPB = CQ_WARPS/G;
++    using dec_t = dec_tt<S>;
++    extern __shared__ char cq_smem_raw[];
++    cq_smem_luts * tabs = (cq_smem_luts *) cq_smem_raw;
++    cq_luts L = {};
++    if constexpr (dec_t::uses_lut) {
++        cq_load_luts(xc, tabs[0]);
++        __syncthreads();
++        L = { tabs[0].lut, tabs[0].plut };
++    }
++    const int lane = threadIdx.x % WARP_SIZE;
++    const int warp = threadIdx.x / WARP_SIZE;
++    const int g    = warp % G;
++    const int nblk = ncols / GGML_CQ_BLCK;
++
++    for (int row = blockIdx.x*RPB + warp/G; row < nrows; row += gridDim.x*RPB) {
++        dec_t dx;
++        dx.init(xm, xc, row, ncols, lane, g);
++        dx.load(0, lane);
++        uint32_t * out = dst + (size_t) row*(ncols/2);
++        for (int b = 0; b < nblk; ++b) {
++            dx.next_block();
++            if (b + 1 < nblk) {
++                dx.load(b + 1, lane);
++            }
++#pragma unroll
++            for (int i = 0; i < S; ++i) {
++                float x0, x1;
++                dx.pair(i, b, lane, row, L, x0, x1);
++                out[lane + 32*(b*8 + g*S + i)] = (__float_as_uint(x0) >> 16) | (__float_as_uint(x1) & 0xFFFF0000u);
++            }
++        }
++    }
++}
++
++// ---------------------------------------------------------------------------------------------
++// host side
++// ---------------------------------------------------------------------------------------------
++
++// block size that mul_mat_vec_f picks for this row length on NVIDIA (warp 32, max 256)
++static int cq_base_block_size(const int64_t ncols) {
++    int64_t best = 32;
++    int64_t niter_best = (ncols + 2*32 - 1) / (2*32);
++    for (int64_t bs = 64; bs <= 256; bs += 32) {
++        const int64_t niter = (ncols + 2*bs - 1) / (2*bs);
++        if (niter < niter_best) {
++            niter_best = niter;
++            best = bs;
++        }
++    }
++    return (int) best;
++}
++
++static const uint8_t * cq_companion(const ggml_tensor * t) {
++    const ggml_tensor * base = t->view_src ? t->view_src : t;
++    const ggml_tensor * comp = (const ggml_tensor *) base->extra;
++    return comp ? (const uint8_t *) comp->data : nullptr;
++}
++
++bool ggml_cuda_cq_can_mmv(const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * dst) {
++    if (!ggml_cuda_cq_is_type(src0->type) || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
++        return false;
++    }
++    if (src0->ne[0] % GGML_CQ_BLCK != 0 || src0->ne[2] != 1 || src0->ne[3] != 1) {
++        return false;
++    }
++    if (src1->ne[1] != 1 || src1->ne[2] != 1 || src1->ne[3] != 1 || !ggml_is_contiguous(src1) || !ggml_is_contiguous(dst)) {
++        return false;
++    }
++    if (!ggml_is_contiguous(src0) || (src0->view_src && src0->view_offs != 0) || src0->ne[1] > INT32_MAX) {
++        return false;
++    }
++    return cq_base_block_size(src0->ne[0]) == 256;
++}
++
++static int cq_env_int(const char * name, int def) {
++    const char * e = getenv(name);
++    return e ? atoi(e) : def;
++}
++
++// warps per row: fixed by the format for Huffman, free for the fixed-rate types
++static int cq_split(const ggml_tensor * t) {
++    if (t->type == GGML_TYPE_CQ_BF16H) {
++        return ggml_cq_h_split(t->ne[1]);
++    }
++    static const int force = cq_env_int("CQ_SPLIT_W", 0);
++    if (force == 1 || force == 2 || force == 4 || force == 8) {
++        return force;
++    }
++    return ggml_cq_h_split(t->ne[1]);
++}
++
++static int cq_grid(const int64_t nrows, const int G) {
++    static const int mult = cq_env_int("CQ_GRID_MULT", 0);
++    const int rpb = CQ_WARPS/G;
++    const int64_t need = (nrows + rpb - 1)/rpb;
++    if (mult <= 0) {
++        return (int) need;
++    }
++    const int nsm = ggml_cuda_info().devices[ggml_cuda_get_device()].nsm;
++    return (int) std::min<int64_t>(need, (int64_t) nsm*mult);
++}
++
++template <template <int> class dec_tt, bool has_gate, int G>
++static void cq_launch_mmv_g(const ggml_tensor * src0, const ggml_tensor * gate, const float * y, float * dst,
++                            const float * x_bias, const float * gate_bias, int glu_op, float glu_limit, cudaStream_t stream) {
++    const int ncols = (int) src0->ne[0];
++    const int nrows = (int) src0->ne[1];
++    const dim3 grid(cq_grid(nrows, G));
++    const dim3 block(CQ_WARPS*WARP_SIZE);
++    constexpr bool LUT = dec_tt<8/G>::uses_lut;
++    const size_t smem = (LUT ? (has_gate ? 2 : 1)*sizeof(cq_smem_luts) : 0) + 2*(CQ_WARPS/G)*8*sizeof(float);
++    static_assert(2*sizeof(cq_smem_luts) + 2*CQ_WARPS*8*sizeof(float) <= 48*1024, "dynamic shared memory above 48 KiB needs an opt-in");
++    cq_mmv_kernel<dec_tt, has_gate, G><<<grid, block, smem, stream>>>((const uint8_t *) src0->data, cq_companion(src0),
++        gate ? (const uint8_t *) gate->data : nullptr, gate ? cq_companion(gate) : nullptr, y, dst,
++        x_bias, gate_bias, ncols, nrows, glu_op, glu_limit);
++    CUDA_CHECK(cudaGetLastError());
++}
++
++template <template <int> class dec_tt, bool has_gate>
++static void cq_launch_mmv_hg(const ggml_tensor * src0, const ggml_tensor * gate, const float * y, float * dst,
++                             const float * x_bias, const float * gate_bias, int glu_op, float glu_limit, cudaStream_t stream) {
++    switch (cq_split(src0)) {
++        case 1: cq_launch_mmv_g<dec_tt, has_gate, 1>(src0, gate, y, dst, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        case 2: cq_launch_mmv_g<dec_tt, has_gate, 2>(src0, gate, y, dst, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        case 4: cq_launch_mmv_g<dec_tt, has_gate, 4>(src0, gate, y, dst, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        case 8: cq_launch_mmv_g<dec_tt, has_gate, 8>(src0, gate, y, dst, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        default: GGML_ABORT("fatal error");
++    }
++}
++
++template <template <int> class dec_tt>
++static void cq_launch_mmv(const ggml_tensor * src0, const ggml_tensor * gate, const float * y, float * dst,
++                          const float * x_bias, const float * gate_bias, int glu_op, float glu_limit, cudaStream_t stream) {
++    if (gate) {
++        cq_launch_mmv_hg<dec_tt, true >(src0, gate, y, dst, x_bias, gate_bias, glu_op, glu_limit, stream);
++    } else {
++        cq_launch_mmv_hg<dec_tt, false>(src0, gate, y, dst, x_bias, nullptr,   glu_op, glu_limit, stream);
++    }
++}
++
++void ggml_cuda_cq_mul_mat_vec(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
++                              ggml_tensor * dst, const ggml_cuda_mm_fusion_args_host * fusion) {
++    GGML_ASSERT(ggml_cuda_cq_can_mmv(src0, src1, dst));
++    GGML_ASSERT(src0->type != GGML_TYPE_CQ_BF16H || cq_companion(src0) != nullptr);
++
++    const ggml_tensor * gate = nullptr;
++    const float * x_bias = nullptr;
++    const float * gate_bias = nullptr;
++    int   glu_op    = GGML_GLU_OP_SWIGLU;
++    float glu_limit = 0.0f;
++    if (fusion) {
++        GGML_ASSERT(fusion->x_scale == nullptr && fusion->gate_scale == nullptr);
++        if (fusion->gate) {
++            gate = fusion->gate;
++            GGML_ASSERT(gate->type == src0->type && ggml_are_same_shape(gate, src0) && ggml_are_same_stride(gate, src0));
++            GGML_ASSERT(gate->type != GGML_TYPE_CQ_BF16H || cq_companion(gate) != nullptr);
++        }
++        if (fusion->x_bias) {
++            GGML_ASSERT(fusion->x_bias->type == GGML_TYPE_F32 && fusion->x_bias->ne[0] == dst->ne[0]);
++            x_bias = (const float *) fusion->x_bias->data;
++        }
++        if (fusion->gate_bias && gate) {
++            GGML_ASSERT(fusion->gate_bias->type == GGML_TYPE_F32 && fusion->gate_bias->ne[0] == dst->ne[0]);
++            gate_bias = (const float *) fusion->gate_bias->data;
++        }
++        glu_op    = fusion->glu_op;
++        glu_limit = fusion->glu_limit;
++    }
++
++    const float * y = (const float *) src1->data;
++    float       * d = (float *) dst->data;
++    cudaStream_t stream = ctx.stream();
++    switch (src0->type) {
++        case GGML_TYPE_CQ_BF16H:  cq_launch_mmv<cq_dec_h >(src0, gate, y, d, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        case GGML_TYPE_CQ_BF16W4: cq_launch_mmv<cq_dec_w4>(src0, gate, y, d, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        case GGML_TYPE_CQ_BF16W3: cq_launch_mmv<cq_dec_w3>(src0, gate, y, d, x_bias, gate_bias, glu_op, glu_limit, stream); break;
++        default: GGML_ABORT("fatal error");
++    }
++}
++
++template <template <int> class dec_tt, int G>
++static void cq_launch_to_bf16(const ggml_tensor * src0, uint32_t * out, cudaStream_t stream) {
++    const int ncols = (int) src0->ne[0];
++    const int nrows = (int) src0->ne[1];
++    const dim3 grid(cq_grid(nrows, G));
++    const dim3 block(CQ_WARPS*WARP_SIZE);
++    const size_t smem = dec_tt<8/G>::uses_lut ? sizeof(cq_smem_luts) : 0;
++    cq_to_bf16_kernel<dec_tt, G><<<grid, block, smem, stream>>>((const uint8_t *) src0->data, cq_companion(src0), out, ncols, nrows);
++    CUDA_CHECK(cudaGetLastError());
++}
++
++template <template <int> class dec_tt>
++static void cq_launch_to_bf16_g(const ggml_tensor * src0, uint32_t * out, cudaStream_t stream) {
++    switch (cq_split(src0)) {
++        case 1: cq_launch_to_bf16<dec_tt, 1>(src0, out, stream); break;
++        case 2: cq_launch_to_bf16<dec_tt, 2>(src0, out, stream); break;
++        case 4: cq_launch_to_bf16<dec_tt, 4>(src0, out, stream); break;
++        case 8: cq_launch_to_bf16<dec_tt, 8>(src0, out, stream); break;
++        default: GGML_ABORT("fatal error");
++    }
++}
++
++void ggml_cuda_cq_to_bf16(const ggml_tensor * src0, nv_bfloat16 * dst, cudaStream_t stream) {
++    GGML_ASSERT(ggml_cuda_cq_is_type(src0->type));
++    GGML_ASSERT(src0->ne[0] % GGML_CQ_BLCK == 0 && src0->ne[2] == 1 && src0->ne[3] == 1);
++    GGML_ASSERT(!src0->view_src || src0->view_offs == 0);
++    uint32_t * out = (uint32_t *) dst;
++    switch (src0->type) {
++        case GGML_TYPE_CQ_BF16H:
++            GGML_ASSERT(cq_companion(src0) != nullptr);
++            cq_launch_to_bf16_g<cq_dec_h >(src0, out, stream);
++            break;
++        case GGML_TYPE_CQ_BF16W4: cq_launch_to_bf16_g<cq_dec_w4>(src0, out, stream); break;
++        case GGML_TYPE_CQ_BF16W3: cq_launch_to_bf16_g<cq_dec_w3>(src0, out, stream); break;
++        default: GGML_ABORT("fatal error");
++    }
++}
+diff --git a/ggml/src/ggml-cuda/cqw.cuh b/ggml/src/ggml-cuda/cqw.cuh
+new file mode 100644
+index 00000000..41b3b986
+--- /dev/null
++++ b/ggml/src/ggml-cuda/cqw.cuh
+@@ -0,0 +1,18 @@
++// cq/weights-compress: CUDA kernels for compressed BF16 weights (see ggml/src/ggml-cq.h)
++#pragma once
++
++#include "common.cuh"
++
++static inline bool ggml_cuda_cq_is_type(ggml_type type) {
++    return type == GGML_TYPE_CQ_BF16H || type == GGML_TYPE_CQ_BF16W4 || type == GGML_TYPE_CQ_BF16W3;
++}
++
++// true if the fused-decode GEMV kernel can compute this MUL_MAT (batch 1, 2D weights, ne00 % 512 == 0)
++bool ggml_cuda_cq_can_mmv(const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * dst);
++
++// GEMV with decoding inside the kernel; reproduces the summation order of the BF16 mul_mat_vec_f kernel
++void ggml_cuda_cq_mul_mat_vec(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
++                              ggml_tensor * dst, const ggml_cuda_mm_fusion_args_host * fusion);
++
++// decode the whole tensor into a BF16 buffer (prefill path: decoded tile + the regular BF16 GEMM kernels)
++void ggml_cuda_cq_to_bf16(const ggml_tensor * src0, nv_bfloat16 * dst, cudaStream_t stream);
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index b50d05d5..53b9ef08 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -32,6 +32,7 @@
+ #include "ggml-cuda/mmf.cuh"
+ #include "ggml-cuda/mmq.cuh"
+ #include "ggml-cuda/mmvf.cuh"
++#include "ggml-cuda/cqw.cuh"
+ #include "ggml-cuda/mmvq.cuh"
+ #include "ggml-cuda/moe-weighted-reduction.cuh"
+ #include "ggml-cuda/norm.cuh"
+@@ -1764,6 +1765,11 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_f(const ggml_tensor * tensor) {
+     ggml_tensor *       src1 = tensor->src[1];
+     const ggml_tensor * dst  = tensor;
+ 
++    // cq/weights-compress: compressed BF16 weights have their own fused GEMV (same summation order as BF16)
++    if (ggml_cuda_cq_is_type(src0->type)) {
++        return tensor->op == GGML_OP_MUL_MAT && ggml_cuda_cq_can_mmv(src0, src1, dst);
++    }
++
+     const bool is_mul_mat_id = tensor->op == GGML_OP_MUL_MAT_ID;
+ 
+     bool use_mul_mat_vec_f =
+@@ -1791,6 +1797,10 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
+     ggml_tensor *       src1 = tensor->src[1];
+     const ggml_tensor * dst  = tensor;
+ 
++    if (ggml_cuda_cq_is_type(src0->type)) {
++        return false;
++    }
++
+     const bool bad_padding_clear = ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
+                                    ggml_nbytes(src0) != ggml_backend_buffer_get_alloc_size(src0->buffer, src0) &&
+                                    src0->view_src;
+@@ -1818,6 +1828,29 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
+ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
+     GGML_TENSOR_BINARY_OP_LOCALS
+ 
++    // cq/weights-compress: batch 1 -> GEMV with in-kernel decoding; otherwise decode the whole tensor into a
++    // BF16 scratch buffer and run the regular BF16 path on it (same kernels and shapes as the BF16 model)
++    if (ggml_cuda_cq_is_type(src0->type)) {
++        if (ggml_cuda_cq_can_mmv(src0, src1, dst)) {
++            ggml_cuda_cq_mul_mat_vec(ctx, src0, src1, dst, nullptr);
++            return;
++        }
++        ggml_cuda_pool_alloc<nv_bfloat16> tmp(ctx.pool(), ggml_nelements(src0));
++        ggml_cuda_cq_to_bf16(src0, tmp.get(), ctx.stream());
++        ggml_tensor t = *src0;
++        t.type     = GGML_TYPE_BF16;
++        t.data     = tmp.get();
++        t.extra    = nullptr;
++        t.view_src = nullptr;
++        t.view_offs = 0;
++        t.nb[0] = sizeof(nv_bfloat16);
++        t.nb[1] = t.nb[0]*t.ne[0];
++        t.nb[2] = t.nb[1]*t.ne[1];
++        t.nb[3] = t.nb[2]*t.ne[2];
++        ggml_cuda_mul_mat(ctx, &t, src1, dst);
++        return;
++    }
++
+     if (ggml_cuda_op_mul_mat_use_fwht(dst) && ggml_cuda_op_fwht(ctx, src1, dst)) {
+         return;
+     }
+@@ -5230,6 +5263,9 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+                     }
+                 }
+ #endif // GGML_USE_MUSA
++                if (ggml_cuda_cq_is_type(a->type)) {
++                    return op->op == GGML_OP_MUL_MAT && b->type == GGML_TYPE_F32 && a->ne[0] % 512 == 0 && a->ne[2] == 1 && a->ne[3] == 1;
++                }
+                 switch (a->type) {
+                     case GGML_TYPE_F32:
+                     case GGML_TYPE_F16:
+diff --git a/ggml/src/ggml-cuda/mmvf.cu b/ggml/src/ggml-cuda/mmvf.cu
+index bd5c5d42..0692dd59 100644
+--- a/ggml/src/ggml-cuda/mmvf.cu
++++ b/ggml/src/ggml-cuda/mmvf.cu
+@@ -3,6 +3,7 @@
+ #include "unary.cuh"
+ #include "mmvf.cuh"
+ #include "convert.cuh"
++#include "cqw.cuh"
+ 
+ template <typename T, typename type_acc, int ncols_dst, int block_size, bool has_fusion = false, bool is_multi_token_id = false>
+ static __global__ void mul_mat_vec_f(
+@@ -633,6 +634,11 @@ static void mul_mat_vec_f_cuda(
+ 
+ void ggml_cuda_mul_mat_vec_f(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+     const ggml_cuda_mm_fusion_args_host * fusion) {
++    if (ggml_cuda_cq_is_type(src0->type)) { // cq/weights-compress (fused GLU path)
++        GGML_ASSERT(ids == nullptr);
++        ggml_cuda_cq_mul_mat_vec(ctx, src0, src1, dst, fusion);
++        return;
++    }
+     GGML_ASSERT(        src1->type == GGML_TYPE_F32);
+     GGML_ASSERT(!ids ||  ids->type == GGML_TYPE_I32);
+     GGML_ASSERT(         dst->type == GGML_TYPE_F32);
+diff --git a/ggml/src/ggml-quants.c b/ggml/src/ggml-quants.c
+index 55db802c..0063afad 100644
+--- a/ggml/src/ggml-quants.c
++++ b/ggml/src/ggml-quants.c
+@@ -5625,6 +5625,9 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
+         case GGML_TYPE_I16:
+         case GGML_TYPE_I32:
+         case GGML_TYPE_I64:
++        case GGML_TYPE_CQ_BF16H:
++        case GGML_TYPE_CQ_BF16W4:
++        case GGML_TYPE_CQ_BF16W3:
+             // nothing to validate
+             break;
+         default:
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index cdc10a75..fcccff00 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -10,6 +10,7 @@
+ 
+ // FIXME: required here for quantization functions
+ #include "ggml-quants.h"
++#include "ggml-cq.h"
+ 
+ #ifdef GGML_USE_CPU_HBM
+ #include <hbwmalloc.h>
+@@ -891,6 +892,30 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
+         .to_float                 = (ggml_to_float_t) ggml_bf16_to_fp32_row,
+         .from_float_ref           = (ggml_from_float_t) ggml_fp32_to_bf16_row_ref,
+     },
++    [GGML_TYPE_CQ_BF16H] = {
++        .type_name                = "cq_bf16h",
++        .blck_size                = GGML_CQ_BLCK,
++        .type_size                = GGML_CQ_BLCK, // sign|mantissa plane only; exponent stream in companion "<name>.cqx"
++        .is_quantized             = true,
++        .to_float                 = NULL,         // needs the companion tensor, see ggml_cq_decode_row_bf16h
++        .from_float_ref           = NULL,
++    },
++    [GGML_TYPE_CQ_BF16W4] = {
++        .type_name                = "cq_bf16w4",
++        .blck_size                = GGML_CQ_BLCK,
++        .type_size                = sizeof(block_cq_bf16w4),
++        .is_quantized             = true,
++        .to_float                 = (ggml_to_float_t) ggml_cq_dequantize_row_bf16w4, // escapes (if any) need the companion
++        .from_float_ref           = NULL,
++    },
++    [GGML_TYPE_CQ_BF16W3] = {
++        .type_name                = "cq_bf16w3",
++        .blck_size                = GGML_CQ_BLCK,
++        .type_size                = sizeof(block_cq_bf16w3),
++        .is_quantized             = true,
++        .to_float                 = (ggml_to_float_t) ggml_cq_dequantize_row_bf16w3,
++        .from_float_ref           = NULL,
++    },
+     [31] = { // GGML_TYPE_Q4_0_4_4
+         .type_name                = "TYPE_Q4_0_4_4 REMOVED, use Q4_0 with runtime repacking",
+         .blck_size                = 0,
+diff --git a/gguf-py/gguf/constants.py b/gguf-py/gguf/constants.py
+index 9a7a5e5b..a1e67125 100644
+--- a/gguf-py/gguf/constants.py
++++ b/gguf-py/gguf/constants.py
+@@ -5722,6 +5722,9 @@ class GGMLQuantizationType(IntEnum):
+     NVFP4   = 40
+     Q1_0    = 41
+     Q2_0    = 42
++    CQ_BF16H  = 50
++    CQ_BF16W4 = 51
++    CQ_BF16W3 = 52
+ 
+ 
+ class ExpertGatingFuncType(IntEnum):
+@@ -5916,6 +5919,9 @@ GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
+     GGMLQuantizationType.NVFP4:   (64, 4 + 32),
+     GGMLQuantizationType.Q1_0:    (128, 2 + 16),
+     GGMLQuantizationType.Q2_0:    (64, 2 + 16),
++    GGMLQuantizationType.CQ_BF16H:  (512, 512),
++    GGMLQuantizationType.CQ_BF16W4: (512, 776),
++    GGMLQuantizationType.CQ_BF16W3: (512, 712),
+ }
+ 
+ 
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 43c396f1..d753527f 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1182,6 +1182,15 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+             size_data -= nbytes;
+             n_created++;
+ 
++            // cq/weights-compress: the companion of a skipped compressed tensor is skipped too
++            if (!files.empty()) {
++                const std::string cname = tn.str() + ".cqx";
++                if (const auto * cw = get_weight(cname.c_str())) {
++                    size_data -= ggml_nbytes(cw->tensor);
++                    n_created++;
++                }
++            }
++
+             return nullptr;
+         }
+ 
+@@ -1386,6 +1395,28 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+         n_created++;
+     }
+ 
++    // cq/weights-compress: compressed BF16 weights carry a companion tensor "<name>.cqx" (I8, 1-D) with the
++    // exponent stream or escape list. It is created in the same context (same buffer type) and linked via extra.
++    if (t_meta.type == GGML_TYPE_CQ_BF16H || t_meta.type == GGML_TYPE_CQ_BF16W4 || t_meta.type == GGML_TYPE_CQ_BF16W3) {
++        const std::string cname = std::string(ggml_get_name(&t_meta)) + ".cqx";
++        const auto * cw = get_weight(cname.c_str());
++        if (cw) {
++            ggml_tensor * comp = ggml_get_tensor(ctx, cname.c_str());
++            if (!comp) {
++                comp = ggml_dup_tensor(ctx, cw->tensor);
++                ggml_set_name(comp, cname.c_str());
++                if (duplicated) {
++                    size_data += ggml_nbytes(cw->tensor);
++                } else {
++                    n_created++;
++                }
++            }
++            tensor->extra = comp;
++        } else if (t_meta.type == GGML_TYPE_CQ_BF16H) {
++            throw std::runtime_error(format("compressed tensor '%s' has no companion '%s'", ggml_get_name(&t_meta), cname.c_str()));
++        }
++    }
++
+     return tensor;
+ }
+ 
+diff --git a/tools/CMakeLists.txt b/tools/CMakeLists.txt
+index c8ad1db4..1630bdab 100644
+--- a/tools/CMakeLists.txt
++++ b/tools/CMakeLists.txt
+@@ -16,6 +16,7 @@ if (EMSCRIPTEN)
+ else()
+     add_subdirectory(batched-bench)
+     add_subdirectory(gguf-split)
++    add_subdirectory(cq-convert)
+     add_subdirectory(imatrix)
+     add_subdirectory(llama-bench)
+     add_subdirectory(completion)
+diff --git a/tools/cq-convert/CMakeLists.txt b/tools/cq-convert/CMakeLists.txt
+new file mode 100644
+index 00000000..f6b88edf
+--- /dev/null
++++ b/tools/cq-convert/CMakeLists.txt
+@@ -0,0 +1,14 @@
++set(TARGET llama-cq-convert)
++add_executable(${TARGET} cq-convert.cpp)
++target_link_libraries(${TARGET} PRIVATE ggml ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PRIVATE cxx_std_17)
++
++set(TARGET llama-cq-logits)
++add_executable(${TARGET} cq-logits.cpp)
++target_link_libraries(${TARGET} PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PRIVATE cxx_std_17)
++
++set(TARGET llama-cq-kbench)
++add_executable(${TARGET} cq-kbench.cpp)
++target_link_libraries(${TARGET} PRIVATE ggml ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PRIVATE cxx_std_17)
+diff --git a/tools/cq-convert/cq-convert.cpp b/tools/cq-convert/cq-convert.cpp
+new file mode 100644
+index 00000000..98082912
+--- /dev/null
++++ b/tools/cq-convert/cq-convert.cpp
+@@ -0,0 +1,238 @@
++// llama-cq-convert: re-code the BF16 tensors of a GGUF file into the compressed weight types of ggml-cq.h
++// (research branch cq/weights-compress).
++//
++//   llama-cq-convert IN.gguf OUT.gguf --mode h|w4|w4lossy|w3 [--rule REGEX=MODE ...] [--lut-bits N] [--split 0|1|2|4|8] [--no-verify]
++//
++// Modes: h       lossless, Huffman-coded exponent (GGML_TYPE_CQ_BF16H + companion "<name>.cqx")
++//        w4      lossless, 4-bit exponent offset + escape list (GGML_TYPE_CQ_BF16W4 + companion)
++//        w4lossy 4-bit exponent offset, values below the window flushed to 0 (GGML_TYPE_CQ_BF16W4, no companion)
++//        w3      3-bit exponent offset, values below the window flushed to 0 (GGML_TYPE_CQ_BF16W3)
++//        keep    leave the tensor as it is
++// Only 2-D BF16 tensors with ne0 % 512 == 0 are eligible. Rules are checked in order, the first match wins;
++// tensors without a matching rule use --mode.
++
++#include "ggml.h"
++#include "gguf.h"
++#include "../../ggml/src/ggml-cq.h"
++
++#include <chrono>
++#include <cinttypes>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <map>
++#include <regex>
++#include <string>
++#include <vector>
++
++struct rule {
++    std::regex  re;
++    std::string pat;
++    std::string mode;
++};
++
++static void usage(const char * argv0) {
++    fprintf(stderr, "usage: %s IN.gguf OUT.gguf --mode h|w4|w4lossy|w3|keep [--rule REGEX=MODE ...] [--lut-bits N] [--split 0|1|2|4|8] [--no-verify]\n", argv0);
++    exit(1);
++}
++
++int main(int argc, char ** argv) {
++    if (argc < 3) {
++        usage(argv[0]);
++    }
++    const char * fin  = argv[1];
++    const char * fout = argv[2];
++    std::string mode_default = "keep";
++    std::vector<rule> rules;
++    int  lut_bits = 8;
++    int  n_split  = 0;
++    bool verify   = true;
++    for (int i = 3; i < argc; ++i) {
++        const std::string a = argv[i];
++        if (a == "--mode" && i + 1 < argc) {
++            mode_default = argv[++i];
++        } else if (a == "--rule" && i + 1 < argc) {
++            const std::string r = argv[++i];
++            const size_t eq = r.rfind('=');
++            if (eq == std::string::npos) usage(argv[0]);
++            rules.push_back({std::regex(r.substr(0, eq)), r.substr(0, eq), r.substr(eq + 1)});
++        } else if (a == "--lut-bits" && i + 1 < argc) {
++            lut_bits = atoi(argv[++i]);
++        } else if (a == "--split" && i + 1 < argc) {
++            n_split = atoi(argv[++i]);
++        } else if (a == "--no-verify") {
++            verify = false;
++        } else {
++            usage(argv[0]);
++        }
++    }
++
++    if (lut_bits != 8) {
++        fprintf(stderr, "only --lut-bits 8 is supported by the CUDA kernels\n");
++        return 1;
++    }
++
++    ggml_context * ctx_in = nullptr;
++    gguf_init_params ip = { /*no_alloc =*/ false, /*ctx =*/ &ctx_in };
++    gguf_context * gin = gguf_init_from_file(fin, ip);
++    if (!gin) {
++        fprintf(stderr, "failed to read %s\n", fin);
++        return 1;
++    }
++    const int64_t n_tensors = gguf_get_n_tensors(gin);
++
++    gguf_context * gout = gguf_init_empty();
++    gguf_set_kv(gout, gin);
++
++    ggml_init_params mp = { /*mem_size =*/ ggml_tensor_overhead()*(size_t) (2*n_tensors + 16), /*mem_buffer =*/ nullptr, /*no_alloc =*/ true };
++    ggml_context * ctx_meta = ggml_init(mp);
++
++    std::vector<std::vector<uint8_t>> keep_main;
++    std::vector<uint8_t *> keep_comp;
++
++    std::map<std::string, std::pair<size_t, size_t>> by_type; // type -> (bytes before, bytes after)
++    size_t tot_before = 0, tot_after = 0;
++    int64_t tot_escaped = 0, tot_values = 0;
++    std::string modes_used;
++
++    const auto t0 = std::chrono::steady_clock::now();
++
++    for (int64_t ti = 0; ti < n_tensors; ++ti) {
++        const char * name = gguf_get_tensor_name(gin, ti);
++        ggml_tensor * t = ggml_get_tensor(ctx_in, name);
++        const size_t nb_before = ggml_nbytes(t);
++        tot_before += nb_before;
++
++        std::string mode = mode_default;
++        for (const auto & r : rules) {
++            if (std::regex_search(name, r.re)) {
++                mode = r.mode;
++                break;
++            }
++        }
++        const bool eligible = t->type == GGML_TYPE_BF16 && ggml_n_dims(t) == 2 && t->ne[0] % GGML_CQ_BLCK == 0;
++        if (!eligible || mode == "keep") {
++            gguf_add_tensor(gout, t);
++            tot_after += nb_before;
++            by_type[ggml_type_name(t->type)].first  += nb_before;
++            by_type[ggml_type_name(t->type)].second += nb_before;
++            continue;
++        }
++
++        const int64_t ne0 = t->ne[0], ne1 = t->ne[1];
++        const uint16_t * src = (const uint16_t *) t->data;
++        ggml_type   ntype;
++        size_t      main_bytes;
++        uint8_t *   comp = nullptr;
++        size_t      comp_size = 0;
++        int64_t     n_esc = 0;
++        int         rc = 0;
++        if (mode == "h") {
++            ntype = GGML_TYPE_CQ_BF16H;
++        } else if (mode == "w4" || mode == "w4lossy") {
++            ntype = GGML_TYPE_CQ_BF16W4;
++        } else if (mode == "w3") {
++            ntype = GGML_TYPE_CQ_BF16W3;
++        } else {
++            fprintf(stderr, "unknown mode %s\n", mode.c_str());
++            return 1;
++        }
++        main_bytes = ggml_row_size(ntype, ne0)*ne1;
++        keep_main.emplace_back(main_bytes);
++        uint8_t * main = keep_main.back().data();
++        if (ntype == GGML_TYPE_CQ_BF16H) {
++            rc = ggml_cq_encode_bf16h(src, ne0, ne1, lut_bits, n_split, main, &comp, &comp_size);
++        } else if (ntype == GGML_TYPE_CQ_BF16W4) {
++            rc = ggml_cq_encode_bf16w4(src, ne0, ne1, mode == "w4", main, mode == "w4" ? &comp : nullptr,
++                                       mode == "w4" ? &comp_size : nullptr, &n_esc);
++        } else {
++            rc = ggml_cq_encode_bf16w3(src, ne0, ne1, main, &n_esc);
++        }
++        if (rc != 0) {
++            fprintf(stderr, "%-32s encode failed (rc %d), kept as BF16\n", name, rc);
++            keep_main.pop_back();
++            gguf_add_tensor(gout, t);
++            tot_after += nb_before;
++            continue;
++        }
++
++        if (verify) {
++            std::vector<uint16_t> row(ne0);
++            int64_t ndiff = 0;
++            for (int64_t r = 0; r < ne1; ++r) {
++                if (ntype == GGML_TYPE_CQ_BF16H) {
++                    ggml_cq_decode_row_bf16h(main, comp, r, ne0, row.data());
++                } else if (ntype == GGML_TYPE_CQ_BF16W4) {
++                    ggml_cq_decode_row_bf16w4(main + r*ggml_row_size(ntype, ne0), comp, r, ne0, row.data());
++                } else {
++                    ggml_cq_decode_row_bf16w3(main + r*ggml_row_size(ntype, ne0), ne0, row.data());
++                }
++                for (int64_t k = 0; k < ne0; ++k) {
++                    ndiff += row[k] != src[r*ne0 + k];
++                }
++            }
++            const bool lossless = mode == "h" || mode == "w4";
++            if (lossless && ndiff != 0) {
++                fprintf(stderr, "%s: VERIFY FAILED, %" PRId64 " values differ\n", name, ndiff);
++                return 2;
++            }
++            if (!lossless && ndiff != n_esc) {
++                fprintf(stderr, "%s: VERIFY FAILED, %" PRId64 " values differ, expected %" PRId64 "\n", name, ndiff, n_esc);
++                return 2;
++            }
++        }
++
++        ggml_tensor * tm = ggml_new_tensor_2d(ctx_meta, ntype, ne0, ne1);
++        ggml_set_name(tm, name);
++        tm->data = main;
++        gguf_add_tensor(gout, tm);
++        size_t after = main_bytes;
++        if (comp) {
++            const std::string cname = std::string(name) + GGML_CQ_SUFFIX;
++            ggml_tensor * tc = ggml_new_tensor_1d(ctx_meta, GGML_TYPE_I8, (int64_t) comp_size);
++            ggml_set_name(tc, cname.c_str());
++            tc->data = comp;
++            gguf_add_tensor(gout, tc);
++            keep_comp.push_back(comp);
++            after += comp_size;
++        }
++        tot_after += after;
++        tot_escaped += n_esc;
++        tot_values  += ne0*ne1;
++        by_type[ggml_type_name(ntype)].first  += nb_before;
++        by_type[ggml_type_name(ntype)].second += after;
++        if (modes_used.find(mode) == std::string::npos) {
++            modes_used += (modes_used.empty() ? "" : ",") + mode;
++        }
++        printf("%-32s %6" PRId64 " x %6" PRId64 "  %-10s %10zu -> %10zu  ratio %.4f  bits/value %.3f  escaped %" PRId64 "\n",
++               name, ne0, ne1, mode.c_str(), nb_before, after, (double) after/nb_before, 8.0*after/(ne0*ne1), n_esc);
++        fflush(stdout);
++    }
++
++    gguf_set_val_str(gout, "cq.weights.modes", modes_used.c_str());
++    gguf_set_val_u32(gout, "cq.weights.lut_bits", (uint32_t) lut_bits);
++
++    const auto t1 = std::chrono::steady_clock::now();
++    printf("\nby type (bytes before -> after):\n");
++    for (const auto & kv : by_type) {
++        printf("  %-10s %12zu -> %12zu  (%.4f)\n", kv.first.c_str(), kv.second.first, kv.second.second,
++               kv.second.first ? (double) kv.second.second/kv.second.first : 0.0);
++    }
++    printf("tensor bytes: %zu -> %zu  ratio %.4f ; coded values %" PRId64 ", escaped/flushed %" PRId64 " (%.3g)\n",
++           tot_before, tot_after, (double) tot_after/tot_before, tot_values, tot_escaped,
++           tot_values ? (double) tot_escaped/tot_values : 0.0);
++    printf("encode+verify time: %.1f s\n", std::chrono::duration<double>(t1 - t0).count());
++
++    if (!gguf_write_to_file(gout, fout, false)) {
++        fprintf(stderr, "failed to write %s\n", fout);
++        return 1;
++    }
++    printf("wrote %s\n", fout);
++
++    for (auto * c : keep_comp) free(c);
++    gguf_free(gout);
++    gguf_free(gin);
++    ggml_free(ctx_meta);
++    ggml_free(ctx_in);
++    return 0;
++}
+diff --git a/tools/cq-convert/cq-kbench.cpp b/tools/cq-convert/cq-kbench.cpp
+new file mode 100644
+index 00000000..f0e5d767
+--- /dev/null
++++ b/tools/cq-convert/cq-kbench.cpp
+@@ -0,0 +1,201 @@
++// llama-cq-kbench: per-tensor GEMV/GEMM micro-benchmark and bit-exactness check of the compressed weight types
++// against the BF16 originals (research branch cq/weights-compress).
++//
++//   llama-cq-kbench --ref BF16.gguf --cq A.gguf [--cq B.gguf ...] [--tensor REGEX] [--batch N] [--iters N] [--reps N]
++//
++// For every selected tensor (default: blk.5 FFN/attention matrices and token_embd) the program uploads the tensor
++// from each file to the GPU, runs dst = W x (x random, fixed seed) `iters` times per repetition through the ggml CUDA
++// backend, and prints the time per call, effective bandwidth (stored bytes incl. companion / time) and whether the
++// output equals the BF16 output bit for bit. The order of files is alternated between repetitions (ABBA).
++
++#include "ggml.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include "gguf.h"
++
++#include <algorithm>
++#include <chrono>
++#include <cinttypes>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <regex>
++#include <string>
++#include <vector>
++
++struct model_file {
++    std::string     path;
++    gguf_context  * g   = nullptr;
++    ggml_context  * ctx = nullptr;
++};
++
++static model_file open_model(const std::string & path) {
++    model_file m;
++    m.path = path;
++    gguf_init_params ip = { /*no_alloc =*/ true, /*ctx =*/ &m.ctx };
++    m.g = gguf_init_from_file(path.c_str(), ip);
++    if (!m.g) {
++        fprintf(stderr, "cannot open %s\n", path.c_str());
++        exit(1);
++    }
++    return m;
++}
++
++static std::vector<uint8_t> read_data(const model_file & m, const char * name) {
++    const int64_t id = gguf_find_tensor(m.g, name);
++    ggml_tensor * t = ggml_get_tensor(m.ctx, name);
++    std::vector<uint8_t> v(ggml_nbytes(t));
++    FILE * f = fopen(m.path.c_str(), "rb");
++    _fseeki64(f, (int64_t) (gguf_get_data_offset(m.g) + gguf_get_tensor_offset(m.g, id)), SEEK_SET);
++    if (fread(v.data(), 1, v.size(), f) != v.size()) {
++        fprintf(stderr, "read failed %s\n", name);
++        exit(1);
++    }
++    fclose(f);
++    return v;
++}
++
++struct case_result {
++    double us_min = 1e30, us_sum = 0;
++    int    n = 0;
++};
++
++int main(int argc, char ** argv) {
++    std::string ref;
++    std::vector<std::string> cqs;
++    std::string tensor_re = "^(blk\\.5\\.(ffn_up|ffn_down|attn_qkv|ssm_out)\\.weight|token_embd\\.weight)$";
++    int batch = 1, iters = 100, reps = 6;
++    for (int i = 1; i < argc; ++i) {
++        const std::string a = argv[i];
++        if      (a == "--ref"    && i + 1 < argc) ref = argv[++i];
++        else if (a == "--cq"     && i + 1 < argc) cqs.push_back(argv[++i]);
++        else if (a == "--tensor" && i + 1 < argc) tensor_re = argv[++i];
++        else if (a == "--batch"  && i + 1 < argc) batch = atoi(argv[++i]);
++        else if (a == "--iters"  && i + 1 < argc) iters = atoi(argv[++i]);
++        else if (a == "--reps"   && i + 1 < argc) reps = atoi(argv[++i]);
++        else { fprintf(stderr, "bad arg %s\n", a.c_str()); return 1; }
++    }
++    if (ref.empty()) {
++        fprintf(stderr, "--ref required\n");
++        return 1;
++    }
++
++    ggml_backend_load_all();
++    ggml_backend_t be = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_GPU, nullptr);
++    if (!be) {
++        fprintf(stderr, "no GPU backend\n");
++        return 1;
++    }
++
++    std::vector<model_file> files;
++    files.push_back(open_model(ref));
++    for (auto & c : cqs) files.push_back(open_model(c));
++    const std::regex re(tensor_re);
++
++    const int64_t nt = gguf_get_n_tensors(files[0].g);
++    std::mt19937 rng(1234);
++    std::normal_distribution<float> nd(0.0f, 1.0f);
++
++    printf("%-28s %-10s %8s %8s %6s %12s %10s %10s %9s %s\n", "tensor", "type", "ne0", "ne1", "batch", "bytes", "us_min", "us_mean", "GB/s", "exact_vs_ref");
++    for (int64_t ti = 0; ti < nt; ++ti) {
++        const char * name = gguf_get_tensor_name(files[0].g, ti);
++        if (!std::regex_search(name, re)) continue;
++        ggml_tensor * t0 = ggml_get_tensor(files[0].ctx, name);
++        if (ggml_n_dims(t0) != 2) continue;
++        const int64_t K = t0->ne[0], N = t0->ne[1];
++
++        // one context per file: weight (+companion), x, out
++        const size_t nf = files.size();
++        std::vector<ggml_context *> ctxs(nf);
++        std::vector<ggml_backend_buffer_t> bufs(nf);
++        std::vector<ggml_cgraph *> graphs(nf);
++        std::vector<ggml_tensor *> xs(nf), outs(nf);
++        std::vector<size_t> bytes(nf);
++        std::vector<std::string> tnames(nf);
++        std::vector<float> xv((size_t) K*batch);
++        for (auto & v : xv) v = nd(rng);
++
++        for (size_t f = 0; f < nf; ++f) {
++            ggml_tensor * src = ggml_get_tensor(files[f].ctx, name);
++            const std::string cname = std::string(name) + ".cqx";
++            ggml_tensor * csrc = ggml_get_tensor(files[f].ctx, cname.c_str());
++            ggml_init_params p = { ggml_tensor_overhead()*(size_t) (iters + 16) + ggml_graph_overhead_custom(iters + 16, false), nullptr, true };
++            ctxs[f] = ggml_init(p);
++            ggml_tensor * w = ggml_dup_tensor(ctxs[f], src);
++            ggml_set_name(w, name);
++            ggml_tensor * c = csrc ? ggml_dup_tensor(ctxs[f], csrc) : nullptr;
++            xs[f] = ggml_new_tensor_2d(ctxs[f], GGML_TYPE_F32, K, batch);
++            // `iters` independent GEMVs in one graph: one launch of the graph per repetition, so the per-call
++            // overhead of ggml_backend_graph_compute does not dominate small tensors
++            graphs[f] = ggml_new_graph_custom(ctxs[f], iters + 16, false);
++            for (int it = 0; it < iters; ++it) {
++                ggml_tensor * o = ggml_mul_mat(ctxs[f], w, xs[f]);
++                ggml_build_forward_expand(graphs[f], o);
++                if (it == 0) outs[f] = o;
++            }
++            bufs[f] = ggml_backend_alloc_ctx_tensors(ctxs[f], be);
++            ggml_backend_tensor_set(w, read_data(files[f], name).data(), 0, ggml_nbytes(src));
++            bytes[f] = ggml_nbytes(src);
++            if (c) {
++                ggml_backend_tensor_set(c, read_data(files[f], cname.c_str()).data(), 0, ggml_nbytes(csrc));
++                w->extra = c;
++                bytes[f] += ggml_nbytes(csrc);
++            }
++            ggml_backend_tensor_set(xs[f], xv.data(), 0, xv.size()*sizeof(float));
++            tnames[f] = ggml_type_name(src->type);
++        }
++
++        // reference output + warm-up
++        std::vector<std::vector<float>> res(nf, std::vector<float>((size_t) N*batch));
++        for (size_t f = 0; f < nf; ++f) {
++            ggml_backend_graph_compute(be, graphs[f]);
++            ggml_backend_graph_compute(be, graphs[f]);
++            ggml_backend_synchronize(be);
++            ggml_backend_tensor_get(outs[f], res[f].data(), 0, res[f].size()*sizeof(float));
++        }
++
++        std::vector<case_result> cr(nf);
++        for (int r = 0; r < reps; ++r) {
++            for (size_t k = 0; k < nf; ++k) {
++                const size_t f = (r % 2 == 0) ? k : nf - 1 - k;
++                ggml_backend_synchronize(be);
++                const auto t1 = std::chrono::steady_clock::now();
++                ggml_backend_graph_compute(be, graphs[f]);
++                ggml_backend_synchronize(be);
++                const auto t2 = std::chrono::steady_clock::now();
++                const double us = std::chrono::duration<double, std::micro>(t2 - t1).count()/iters;
++                cr[f].us_min = std::min(cr[f].us_min, us);
++                cr[f].us_sum += us;
++                cr[f].n++;
++            }
++        }
++        for (size_t f = 0; f < nf; ++f) {
++            int64_t ndiff = 0;
++            double  maxrel = 0;
++            for (size_t i = 0; i < res[f].size(); ++i) {
++                uint32_t a, b;
++                memcpy(&a, &res[f][i], 4);
++                memcpy(&b, &res[0][i], 4);
++                if (a != b) {
++                    ndiff++;
++                    const double d = fabs((double) res[f][i] - res[0][i])/(fabs((double) res[0][i]) + 1e-6);
++                    maxrel = std::max(maxrel, d);
++                }
++            }
++            char ex[96];
++            if (ndiff == 0) snprintf(ex, sizeof(ex), "IDENTICAL");
++            else snprintf(ex, sizeof(ex), "diff %" PRId64 "/%zu maxrel %.3g", ndiff, res[f].size(), maxrel);
++            printf("%-28s %-10s %8" PRId64 " %8" PRId64 " %6d %12zu %10.2f %10.2f %9.1f %s\n", name, tnames[f].c_str(), K, N, batch,
++                   bytes[f], cr[f].us_min, cr[f].us_sum/cr[f].n, bytes[f]/(cr[f].us_min*1e3), ex);
++        }
++        fflush(stdout);
++        for (size_t f = 0; f < nf; ++f) {
++            ggml_backend_buffer_free(bufs[f]);
++            ggml_free(ctxs[f]);
++        }
++    }
++    ggml_backend_free(be);
++    return 0;
++}
+diff --git a/tools/cq-convert/cq-logits.cpp b/tools/cq-convert/cq-logits.cpp
+new file mode 100644
+index 00000000..a9dd1a20
+--- /dev/null
++++ b/tools/cq-convert/cq-logits.cpp
+@@ -0,0 +1,110 @@
++// llama-cq-logits: dump raw float logits for a prompt and a greedy continuation, to check that a compressed
++// model produces bit-identical outputs (research branch cq/weights-compress).
++//
++//   llama-cq-logits -m MODEL.gguf -f PROMPT.txt -n N_GEN -o OUT.bin [--per-token] [--ngl 99] [--ctx 4096]
++//
++// Without --per-token the prompt is evaluated as one batch with logits for every prompt token (batch path:
++// decoded tile + GEMM), then N_GEN tokens are generated one by one (batch-1 GEMV path).
++// With --per-token every prompt token is evaluated alone (GEMV path only).
++// OUT.bin receives n_vocab float32 logits per evaluated position; OUT.bin.tokens.txt receives the generated ids.
++
++#include "llama.h"
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <sstream>
++#include <string>
++#include <vector>
++
++int main(int argc, char ** argv) {
++    std::string model, prompt_file, out;
++    int  n_gen = 32, ngl = 99, n_ctx = 4096;
++    bool per_token = false;
++    for (int i = 1; i < argc; ++i) {
++        const std::string a = argv[i];
++        if      (a == "-m" && i + 1 < argc) model = argv[++i];
++        else if (a == "-f" && i + 1 < argc) prompt_file = argv[++i];
++        else if (a == "-o" && i + 1 < argc) out = argv[++i];
++        else if (a == "-n" && i + 1 < argc) n_gen = atoi(argv[++i]);
++        else if (a == "--ngl" && i + 1 < argc) ngl = atoi(argv[++i]);
++        else if (a == "--ctx" && i + 1 < argc) n_ctx = atoi(argv[++i]);
++        else if (a == "--per-token") per_token = true;
++        else { fprintf(stderr, "bad arg %s\n", a.c_str()); return 1; }
++    }
++    if (model.empty() || prompt_file.empty() || out.empty()) {
++        fprintf(stderr, "usage: %s -m MODEL -f PROMPT -o OUT.bin [-n N] [--per-token]\n", argv[0]);
++        return 1;
++    }
++    std::ifstream pf(prompt_file, std::ios::binary);
++    std::stringstream ss;
++    ss << pf.rdbuf();
++    const std::string prompt = ss.str();
++
++    llama_backend_init();
++    llama_model_params mp = llama_model_default_params();
++    mp.n_gpu_layers = ngl;
++    llama_model * mdl = llama_model_load_from_file(model.c_str(), mp);
++    if (!mdl) { fprintf(stderr, "load failed\n"); return 1; }
++    const llama_vocab * vocab = llama_model_get_vocab(mdl);
++    const int n_vocab = llama_vocab_n_tokens(vocab);
++
++    llama_context_params cp = llama_context_default_params();
++    cp.n_ctx   = n_ctx;
++    cp.n_batch = n_ctx;
++    cp.n_ubatch = 512;
++    cp.no_perf = true;
++    llama_context * ctx = llama_init_from_model(mdl, cp);
++    if (!ctx) { fprintf(stderr, "context failed\n"); return 1; }
++
++    std::vector<llama_token> toks(prompt.size() + 16);
++    const int nt = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(), toks.data(), (int) toks.size(), true, false);
++    if (nt <= 0) { fprintf(stderr, "tokenize failed\n"); return 1; }
++    toks.resize(nt);
++    if (nt + n_gen > n_ctx) { fprintf(stderr, "prompt too long\n"); return 1; }
++
++    FILE * fo = fopen(out.c_str(), "wb");
++    std::vector<llama_token> gen;
++
++    if (per_token) {
++        for (int i = 0; i < nt; ++i) {
++            llama_batch b = llama_batch_get_one(&toks[i], 1);
++            if (llama_decode(ctx, b) != 0) { fprintf(stderr, "decode failed\n"); return 1; }
++            fwrite(llama_get_logits_ith(ctx, -1), sizeof(float), n_vocab, fo);
++        }
++    } else {
++        llama_batch b = llama_batch_init(nt, 0, 1);
++        for (int i = 0; i < nt; ++i) {
++            b.token[i] = toks[i];
++            b.pos[i] = i;
++            b.n_seq_id[i] = 1;
++            b.seq_id[i][0] = 0;
++            b.logits[i] = 1;
++        }
++        b.n_tokens = nt;
++        if (llama_decode(ctx, b) != 0) { fprintf(stderr, "decode failed\n"); return 1; }
++        for (int i = 0; i < nt; ++i) {
++            fwrite(llama_get_logits_ith(ctx, i), sizeof(float), n_vocab, fo);
++        }
++        llama_batch_free(b);
++    }
++    for (int g = 0; g < n_gen; ++g) {
++        const float * lg = llama_get_logits_ith(ctx, -1);
++        int best = 0;
++        for (int k = 1; k < n_vocab; ++k) if (lg[k] > lg[best]) best = k;
++        gen.push_back(best);
++        llama_token t = best;
++        llama_batch b = llama_batch_get_one(&t, 1);
++        if (llama_decode(ctx, b) != 0) { fprintf(stderr, "decode failed\n"); return 1; }
++        fwrite(llama_get_logits_ith(ctx, -1), sizeof(float), n_vocab, fo);
++    }
++    fclose(fo);
++    std::ofstream ft(out + ".tokens.txt");
++    for (auto t : gen) ft << t << "\n";
++    printf("prompt tokens %d, generated %d, positions written %d, n_vocab %d\n", nt, n_gen, (per_token ? nt : nt) + n_gen, n_vocab);
++    llama_free(ctx);
++    llama_model_free(mdl);
++    llama_backend_free();
++    return 0;
++}
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,352 @@
+{
+ "qwen3_4b_kv_f16": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 25,
+  "ref_only": 0,
+  "cand_only": 0,
+  "identical": 39,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    5,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    0,
+    7
+   ],
+   "factual": [
+    3,
+    5
+   ],
+   "long_context": [
+    10,
+    10
+   ]
+  }
+ },
+ "qwen3_4b_kv_q8_0": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 25,
+  "ref_only": 0,
+  "cand_only": 0,
+  "identical": 35,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    5,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    0,
+    7
+   ],
+   "factual": [
+    3,
+    5
+   ],
+   "long_context": [
+    10,
+    10
+   ]
+  }
+ },
+ "qwen3_4b_kv_q4_0": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 21,
+  "ref_only": 5,
+  "cand_only": 1,
+  "identical": 22,
+  "sign_p": 0.21875,
+  "strata": {
+   "ru": [
+    4,
+    6
+   ],
+   "en": [
+    5,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    0,
+    7
+   ],
+   "factual": [
+    2,
+    5
+   ],
+   "long_context": [
+    9,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_BF16": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 27,
+  "ref_only": 1,
+  "cand_only": 0,
+  "identical": 36,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    4,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    2,
+    7
+   ],
+   "factual": [
+    5,
+    5
+   ],
+   "long_context": [
+    9,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q8_0": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 28,
+  "ref_only": 0,
+  "cand_only": 0,
+  "identical": 39,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    5,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    2,
+    7
+   ],
+   "factual": [
+    5,
+    5
+   ],
+   "long_context": [
+    9,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q6_K": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 28,
+  "ref_only": 2,
+  "cand_only": 2,
+  "identical": 32,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    4,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    2,
+    5
+   ],
+   "arithmetic": [
+    1,
+    7
+   ],
+   "factual": [
+    5,
+    5
+   ],
+   "long_context": [
+    10,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q5_K_M": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 25,
+  "ref_only": 3,
+  "cand_only": 0,
+  "identical": 33,
+  "sign_p": 0.25,
+  "strata": {
+   "ru": [
+    3,
+    6
+   ],
+   "en": [
+    5,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    2,
+    7
+   ],
+   "factual": [
+    5,
+    5
+   ],
+   "long_context": [
+    9,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q4_K_M": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 27,
+  "ref_only": 3,
+  "cand_only": 2,
+  "identical": 28,
+  "sign_p": 1.0,
+  "strata": {
+   "ru": [
+    4,
+    6
+   ],
+   "en": [
+    6,
+    6
+   ],
+   "code": [
+    2,
+    5
+   ],
+   "arithmetic": [
+    1,
+    7
+   ],
+   "factual": [
+    5,
+    5
+   ],
+   "long_context": [
+    9,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q3_K_M": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 20,
+  "ref_only": 9,
+  "cand_only": 1,
+  "identical": 21,
+  "sign_p": 0.021484375,
+  "strata": {
+   "ru": [
+    3,
+    6
+   ],
+   "en": [
+    4,
+    6
+   ],
+   "code": [
+    1,
+    5
+   ],
+   "arithmetic": [
+    1,
+    7
+   ],
+   "factual": [
+    1,
+    5
+   ],
+   "long_context": [
+    10,
+    10
+   ]
+  }
+ },
+ "qwen35_2b_Q2_K": {
+  "valid": 39,
+  "harness_errors": 0,
+  "passes": 0,
+  "ref_only": 28,
+  "cand_only": 0,
+  "identical": 0,
+  "sign_p": 7.450580596923828e-09,
+  "strata": {
+   "ru": [
+    0,
+    6
+   ],
+   "en": [
+    0,
+    6
+   ],
+   "code": [
+    0,
+    5
+   ],
+   "arithmetic": [
+    0,
+    7
+   ],
+   "factual": [
+    0,
+    5
+   ],
+   "long_context": [
+    0,
+    10
+   ]
+  }
+ }
+}

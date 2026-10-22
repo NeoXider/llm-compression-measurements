@@ -1,0 +1,411 @@
+From 12d55c36016a31374c8e41b106fa0f21c1ff1a82 Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 15:03:35 +0500
+Subject: [PATCH 4/7] cq: q4o KV type (Q4_0 rule + 2 exact outliers per 128
+ values, half-math GQA decode); lazy buffer unmaps per cuMemMap range
+
+---
+ common/arg.cpp                      |  1 +
+ ggml/include/ggml.h                 |  1 +
+ ggml/src/ggml-common.h              |  9 ++++++
+ ggml/src/ggml-cuda/convert.cu       | 12 ++++++++
+ ggml/src/ggml-cuda/dequantize.cuh   | 21 ++++++++++++++
+ ggml/src/ggml-cuda/fattn-common.cuh | 21 ++++++++++++++
+ ggml/src/ggml-cuda/fattn-vec-gqa.cu |  3 +-
+ ggml/src/ggml-cuda/fattn.cu         |  1 +
+ ggml/src/ggml-cuda/ggml-cuda.cu     | 11 +++----
+ ggml/src/ggml-cuda/set-rows.cu      | 45 +++++++++++++++++++++++++++++
+ ggml/src/ggml-quants.c              | 17 +++++++++++
+ ggml/src/ggml-quants.h              |  1 +
+ ggml/src/ggml.c                     |  8 +++++
+ tools/llama-bench/llama-bench.cpp   |  3 ++
+ 14 files changed, 148 insertions(+), 6 deletions(-)
+
+diff --git a/common/arg.cpp b/common/arg.cpp
+index ea31d686..14310c57 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -313,6 +313,7 @@ const std::vector<ggml_type> kv_cache_types = {
+     GGML_TYPE_Q5_1,
+     GGML_TYPE_F16D4, // cq/kv-compress
+     GGML_TYPE_F16E3, // cq/kv-compress (lossless)
++    GGML_TYPE_Q4O,   // cq/kv-compress (4-bit + exact outliers)
+ };
+ 
+ static ggml_type kv_cache_type_from_str(const std::string & s) {
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+index 22952e62..a118b861 100644
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -433,6 +433,7 @@ extern "C" {
+         // cq/kv-compress research types (values 60..63 reserved for KV cache formats):
+         GGML_TYPE_F16D4   = 60, // F16 with the 4 low mantissa bits dropped: 12 bits/value, block of 32 = 48 bytes (KV cache)
+         GGML_TYPE_F16E3   = 61, // lossless F16, 3-bit exponent window codes + escapes, block of 128 = 244 bytes (KV cache)
++        GGML_TYPE_Q4O     = 62, // 4-bit (Q4_0 rule) + the 2 largest of every 128 values exact, 80 bytes per 128 (KV cache)
+         GGML_TYPE_COUNT   = 64,
+     };
+ 
+diff --git a/ggml/src/ggml-common.h b/ggml/src/ggml-common.h
+index 4783c549..75d2016f 100644
+--- a/ggml/src/ggml-common.h
++++ b/ggml/src/ggml-common.h
+@@ -278,6 +278,15 @@ typedef struct {
+ } block_f16e3;
+ static_assert(sizeof(block_f16e3) == 244, "wrong f16e3 block size/padding");
+ 
++// cq/kv-compress: Q4_0-style 4-bit codes + 2 exact outliers per 128 values
++#define QK_Q4O 128
++typedef struct {
++    ggml_half d[4];
++    uint8_t   qs[QK_Q4O/2];
++    uint32_t  out[2];      // f16 bits | index << 16
++} block_q4o;
++static_assert(sizeof(block_q4o) == 80, "wrong q4o block size/padding");
++
+ #define QK8_1 32
+ typedef struct {
+     GGML_EXTENSION union {
+diff --git a/ggml/src/ggml-cuda/convert.cu b/ggml/src/ggml-cuda/convert.cu
+index cc5de6d8..ddc6ff10 100644
+--- a/ggml/src/ggml-cuda/convert.cu
++++ b/ggml/src/ggml-cuda/convert.cu
+@@ -503,6 +503,8 @@ to_bf16_cuda_t ggml_get_to_bf16_cuda(ggml_type type) {
+             return dequantize_block_cont_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cont_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cont_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cont_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+@@ -564,6 +566,8 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
+             return dequantize_block_cont_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cont_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cont_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cont_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+@@ -628,6 +632,8 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
+             return dequantize_block_cont_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cont_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cont_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cont_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+@@ -691,6 +697,8 @@ to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type) {
+             return dequantize_block_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+@@ -720,6 +728,8 @@ to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type) {
+             return dequantize_block_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+@@ -749,6 +759,8 @@ to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type) {
+             return dequantize_block_cuda<QK5_1, QR5_1, dequantize_q5_1>;
+         case GGML_TYPE_F16E3:
+             return dequantize_block_cuda<QK_F16E3, 1, dequantize_f16e3>;
++        case GGML_TYPE_Q4O:
++            return dequantize_block_cuda<QK_Q4O, 1, dequantize_q4o>;
+         case GGML_TYPE_F16D4:
+             return dequantize_block_cuda<QK_F16D4, 1, dequantize_f16d4>;
+         case GGML_TYPE_Q8_0:
+diff --git a/ggml/src/ggml-cuda/dequantize.cuh b/ggml/src/ggml-cuda/dequantize.cuh
+index 76507f0f..dc4f820c 100644
+--- a/ggml/src/ggml-cuda/dequantize.cuh
++++ b/ggml/src/ggml-cuda/dequantize.cuh
+@@ -149,6 +149,27 @@ static __device__ __forceinline__ void dequantize_f16e3(const void * vx, const i
+     v.y = __half2float(__ushort_as_half(f16e3_get_bits(x, iqs + 1)));
+ }
+ 
++// cq/kv-compress: q4o single value
++static __device__ __forceinline__ float q4o_get(const block_q4o * b, const int j) {
++#pragma unroll
++    for (int s = 0; s < 2; ++s) {
++        const uint32_t o = b->out[s];
++        if (((o >> 16) & 127) == (uint32_t) j) {
++            return __half2float(__ushort_as_half((uint16_t)(o & 0xFFFF)));
++        }
++    }
++    const int q = j >> 5, l = j & 31;
++    const uint8_t byte = b->qs[16*q + (l & 15)];
++    const int code = l < 16 ? (byte & 0xF) : (byte >> 4);
++    return (code - 8) * __half2float(b->d[q]);
++}
++
++static __device__ __forceinline__ void dequantize_q4o(const void * vx, const int64_t ib, const int iqs, float2 & v){
++    const block_q4o * x = (const block_q4o *) vx + ib;
++    v.x = q4o_get(x, iqs + 0);
++    v.y = q4o_get(x, iqs + 1);
++}
++
+ static __device__ __forceinline__ void dequantize_q8_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
+     const block_q8_0 * x = (const block_q8_0 *) vx;
+ 
+diff --git a/ggml/src/ggml-cuda/fattn-common.cuh b/ggml/src/ggml-cuda/fattn-common.cuh
+index d7f47125..5e8cde14 100644
+--- a/ggml/src/ggml-cuda/fattn-common.cuh
++++ b/ggml/src/ggml-cuda/fattn-common.cuh
+@@ -415,6 +415,27 @@ static __device__ __forceinline__ void cq_decode8_h(const char * __restrict__ ro
+         f16d4_decode8((const block_f16d4 *) row + e0/QK_F16D4, (e0 % QK_F16D4)/8, out);
+     } else if constexpr (type == GGML_TYPE_F16E3) {
+         f16e3_decode8((const block_f16e3 *) row + e0/QK_F16E3, e0 % QK_F16E3, out);
++    } else if constexpr (type == GGML_TYPE_Q4O) {
++        const block_q4o * b = (const block_q4o *) row + e0/QK_Q4O;
++        const int l0 = e0 % QK_Q4O;
++        const int q = l0 >> 5, j = l0 & 31;
++        const uint16_t * q16 = (const uint16_t *) (b->qs + 16*q + (j & 15));
++        const int shift = j < 16 ? 0 : 4;
++        const half2 d = __half2half2(b->d[q]);
++#pragma unroll
++        for (int l = 0; l < 4; ++l) {
++            const uint16_t w = q16[l];
++            out[l] = d * make_half2(((w >> shift) & 0xF) - 8, ((w >> (8 + shift)) & 0xF) - 8);
++        }
++#pragma unroll
++        for (int s = 0; s < 2; ++s) {
++            const uint32_t o = b->out[s];
++            const uint32_t k = ((o >> 16) & 127) - (uint32_t) l0;
++            if (k < 8) {
++                half * oh = (half *) out;
++                oh[k] = __ushort_as_half((uint16_t)(o & 0xFFFF));
++            }
++        }
+     } else if constexpr (type == GGML_TYPE_Q8_0) {
+         const block_q8_0 * b = (const block_q8_0 *) row + e0/QK8_0;
+         const uint16_t * q16 = (const uint16_t *) (b->qs + e0 % QK8_0);
+diff --git a/ggml/src/ggml-cuda/fattn-vec-gqa.cu b/ggml/src/ggml-cuda/fattn-vec-gqa.cu
+index a350f36a..218e3ff7 100644
+--- a/ggml/src/ggml-cuda/fattn-vec-gqa.cu
++++ b/ggml/src/ggml-cuda/fattn-vec-gqa.cu
+@@ -61,7 +61,7 @@ bool ggml_cuda_flash_attn_ext_vec_gqa_supported(const ggml_tensor * dst) {
+     if (K->type != V->type) {
+         return false;
+     }
+-    const bool packed = K->type == GGML_TYPE_F16D4 || K->type == GGML_TYPE_F16E3;
++    const bool packed = K->type == GGML_TYPE_F16D4 || K->type == GGML_TYPE_F16E3 || K->type == GGML_TYPE_Q4O;
+     const bool stock  = K->type == GGML_TYPE_F16 || K->type == GGML_TYPE_Q8_0 || K->type == GGML_TYPE_Q4_0;
+     if (!(packed || (mode == 2 && stock))) {
+         return false;
+@@ -95,6 +95,7 @@ void ggml_cuda_flash_attn_ext_vec_gqa(ggml_backend_cuda_context & ctx, ggml_tens
+     switch (K->type) {
+         case GGML_TYPE_F16D4: launch_vec_gqa_d<GGML_TYPE_F16D4, GGML_TYPE_F16D4>(ctx, dst, D, gqa); break;
+         case GGML_TYPE_F16E3: launch_vec_gqa_d<GGML_TYPE_F16E3, GGML_TYPE_F16E3>(ctx, dst, D, gqa); break;
++        case GGML_TYPE_Q4O:   launch_vec_gqa_d<GGML_TYPE_Q4O,   GGML_TYPE_Q4O  >(ctx, dst, D, gqa); break;
+         case GGML_TYPE_F16:   launch_vec_gqa_d<GGML_TYPE_F16,   GGML_TYPE_F16  >(ctx, dst, D, gqa); break;
+         case GGML_TYPE_Q8_0:  launch_vec_gqa_d<GGML_TYPE_Q8_0,  GGML_TYPE_Q8_0 >(ctx, dst, D, gqa); break;
+         case GGML_TYPE_Q4_0:  launch_vec_gqa_d<GGML_TYPE_Q4_0,  GGML_TYPE_Q4_0 >(ctx, dst, D, gqa); break;
+diff --git a/ggml/src/ggml-cuda/fattn.cu b/ggml/src/ggml-cuda/fattn.cu
+index 034ca8ab..9642f811 100644
+--- a/ggml/src/ggml-cuda/fattn.cu
++++ b/ggml/src/ggml-cuda/fattn.cu
+@@ -543,6 +543,7 @@ static bool ggml_cuda_fattn_kv_type_supported(const ggml_type type) {
+         case GGML_TYPE_Q8_0:
+         case GGML_TYPE_F16D4:
+         case GGML_TYPE_F16E3:
++        case GGML_TYPE_Q4O: // decode only through the GQA kernel; other paths convert to f16
+             return true;
+         default:
+             return false;
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index c6439cc5..523e7fc8 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -729,6 +729,7 @@ struct ggml_backend_cuda_buffer_context {
+     size_t               lazy_size = 0;
+     size_t               lazy_gran = 0;
+     std::vector<uint8_t> lazy_mapped;
++    std::vector<std::pair<size_t, size_t>> lazy_runs; // (first chunk, number of chunks) of every cuMemMap call
+     size_t               lazy_mapped_bytes = 0;
+ 
+     ggml_backend_cuda_buffer_context(int device, void * dev_ptr) :
+@@ -739,10 +740,9 @@ struct ggml_backend_cuda_buffer_context {
+     ~ggml_backend_cuda_buffer_context() {
+ #if defined(GGML_USE_VMM)
+         if (lazy) {
+-            for (size_t i = 0; i < lazy_mapped.size(); ++i) {
+-                if (lazy_mapped[i]) {
+-                    CU_CHECK(cuMemUnmap((CUdeviceptr) dev_ptr + i*lazy_gran, lazy_gran));
+-                }
++            // cuMemUnmap must cover exactly the ranges given to cuMemMap
++            for (const auto & r : lazy_runs) {
++                CU_CHECK(cuMemUnmap((CUdeviceptr) dev_ptr + r.first*lazy_gran, r.second*lazy_gran));
+             }
+             CU_CHECK(cuMemAddressFree((CUdeviceptr) dev_ptr, lazy_size));
+             return;
+@@ -793,6 +793,7 @@ static void ggml_cuda_lazy_map(ggml_backend_cuda_buffer_context * ctx, size_t of
+         for (size_t i = c; i < e; ++i) {
+             ctx->lazy_mapped[i] = 1;
+         }
++        ctx->lazy_runs.emplace_back(c, e - c);
+         ctx->lazy_mapped_bytes += n;
+         c = e;
+     }
+@@ -5452,7 +5453,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+                                (op->type == GGML_TYPE_F32 || op->type == GGML_TYPE_F16 || op->type == GGML_TYPE_BF16 ||
+                                op->type == GGML_TYPE_Q4_0 || op->type == GGML_TYPE_Q4_1 || op->type == GGML_TYPE_Q5_0 ||
+                                op->type == GGML_TYPE_Q5_1 || op->type == GGML_TYPE_Q8_0 || op->type == GGML_TYPE_IQ4_NL ||
+-                               op->type == GGML_TYPE_F16D4 || op->type == GGML_TYPE_F16E3) &&
++                               op->type == GGML_TYPE_F16D4 || op->type == GGML_TYPE_F16E3 || op->type == GGML_TYPE_Q4O) &&
+                                op->src[0]->type == GGML_TYPE_F32
+                            ) || (
+                                op->type == GGML_TYPE_F16 && op->src[0]->type == GGML_TYPE_F16
+diff --git a/ggml/src/ggml-cuda/set-rows.cu b/ggml/src/ggml-cuda/set-rows.cu
+index b5f7cf16..7753ed05 100644
+--- a/ggml/src/ggml-cuda/set-rows.cu
++++ b/ggml/src/ggml-cuda/set-rows.cu
+@@ -42,6 +42,41 @@ void cq_f16e3_pool_stats(int device, unsigned long long * used, unsigned long lo
+     *used = c[0]; *lost = c[1]; *cap = h_cq_f16e3_pool[device].cap;
+ }
+ 
++// cq/kv-compress: q4o encoder (one thread per 128 values)
++static __device__ void quantize_f32_q4o_block(const float * __restrict__ x, block_q4o * __restrict__ y) {
++    int i0 = 0, i1 = 1;
++    if (fabsf(x[1]) > fabsf(x[0])) { i0 = 1; i1 = 0; }
++    for (int j = 2; j < QK_Q4O; ++j) {
++        const float a = fabsf(x[j]);
++        if (a > fabsf(x[i0])) { i1 = i0; i0 = j; } else if (a > fabsf(x[i1])) { i1 = j; }
++    }
++#pragma unroll
++    for (int q = 0; q < 4; ++q) {
++        float amax = 0.0f, vmax = 0.0f;
++        for (int l = 0; l < 32; ++l) {
++            const int j = 32*q + l;
++            if (j == i0 || j == i1) {
++                continue;
++            }
++            const float v = x[j];
++            if (fabsf(v) > amax) { amax = fabsf(v); vmax = v; }
++        }
++        const float d  = vmax / -8;
++        const float id = d ? 1.0f/d : 0.0f;
++        y->d[q] = d;
++        for (int l = 0; l < 16; ++l) {
++            const int ja = 32*q + l, jb = ja + 16;
++            const float xa = (ja == i0 || ja == i1) ? 0.0f : x[ja];
++            const float xb = (jb == i0 || jb == i1) ? 0.0f : x[jb];
++            const uint8_t qa = min(15, (int8_t)(xa*id + 8.5f));
++            const uint8_t qb = min(15, (int8_t)(xb*id + 8.5f));
++            y->qs[16*q + l] = qa | (qb << 4);
++        }
++    }
++    y->out[0] = (uint32_t) __half_as_ushort(__float2half_rn(x[i0])) | (uint32_t) i0 << 16;
++    y->out[1] = (uint32_t) __half_as_ushort(__float2half_rn(x[i1])) | (uint32_t) i1 << 16;
++}
++
+ static __device__ void quantize_f32_f16e3_block(const float * __restrict__ x, block_f16e3 * __restrict__ y) {
+     uint32_t hdr = 0;
+     uint16_t esc[F16E3_MAX_ESC];
+@@ -445,6 +480,16 @@ static void set_rows_cuda(ggml_backend_cuda_context & ctx, const ggml_tensor * s
+             nb1, nb2, nb3,
+             stream
+         );
++    } else if (dst->type == GGML_TYPE_Q4O) {
++        set_rows_cuda_quant<idx_t, block_q4o, QK_Q4O, quantize_f32_q4o_block>(
++            src0_d, src1_d, (block_q4o*)dst->data,
++            ne00, ne01, ne02, ne03,
++            ne10, ne11, ne12, ne13,
++            nb01, nb02, nb03,
++            nb10, nb11, nb12,
++            nb1, nb2, nb3,
++            stream
++        );
+     } else if (dst->type == GGML_TYPE_F16E3) {
+         set_rows_cuda_quant<idx_t, block_f16e3, QK_F16E3, quantize_f32_f16e3_block>(
+             src0_d, src1_d, (block_f16e3*)dst->data,
+diff --git a/ggml/src/ggml-quants.c b/ggml/src/ggml-quants.c
+index fd82c48f..ab7f613b 100644
+--- a/ggml/src/ggml-quants.c
++++ b/ggml/src/ggml-quants.c
+@@ -616,6 +616,22 @@ void dequantize_row_f16e3(const block_f16e3 * GGML_RESTRICT x, float * GGML_REST
+     }
+ }
+ 
++void dequantize_row_q4o(const block_q4o * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
++    assert(k % QK_Q4O == 0);
++    const int64_t nb = k / QK_Q4O;
++    for (int64_t i = 0; i < nb; i++) {
++        for (int j = 0; j < QK_Q4O; j++) {
++            const int q = j / 32, l = j % 32;
++            const uint8_t byte = x[i].qs[16*q + (l % 16)];
++            const int code = l < 16 ? (byte & 0xF) : (byte >> 4);
++            y[i*QK_Q4O + j] = (code - 8) * GGML_FP16_TO_FP32(x[i].d[q]);
++        }
++        for (int s = 0; s < 2; s++) {
++            y[i*QK_Q4O + ((x[i].out[s] >> 16) & 127)] = GGML_FP16_TO_FP32((ggml_fp16_t)(x[i].out[s] & 0xFFFF));
++        }
++    }
++}
++
+ size_t quantize_f16d4(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrows, int64_t n_per_row, const float * imatrix) {
+     GGML_UNUSED(imatrix);
+     const size_t row_size = ggml_row_size(GGML_TYPE_F16D4, n_per_row);
+@@ -5698,6 +5714,7 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
+ 
+         case GGML_TYPE_F16D4: // any bit pattern is a valid (finite or not) truncated f16
+         case GGML_TYPE_F16E3:
++        case GGML_TYPE_Q4O:
+         case GGML_TYPE_I8:
+         case GGML_TYPE_I16:
+         case GGML_TYPE_I32:
+diff --git a/ggml/src/ggml-quants.h b/ggml/src/ggml-quants.h
+index 35c4ddfa..e6faa5e1 100644
+--- a/ggml/src/ggml-quants.h
++++ b/ggml/src/ggml-quants.h
+@@ -53,6 +53,7 @@ GGML_API void dequantize_row_q8_0(const block_q8_0 * GGML_RESTRICT x, float * GG
+ GGML_API void quantize_row_f16d4_ref(const float * GGML_RESTRICT x, block_f16d4 * GGML_RESTRICT y, int64_t k);
+ GGML_API void dequantize_row_f16d4(const block_f16d4 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+ GGML_API void dequantize_row_f16e3(const block_f16e3 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
++GGML_API void dequantize_row_q4o(const block_q4o * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+ GGML_API size_t quantize_f16d4(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrows, int64_t n_per_row, const float * imatrix);
+ //GGML_API void dequantize_row_q8_1(const block_q8_1 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+ 
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index dcb7b2ce..2566fbe5 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -758,6 +758,14 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
+         .to_float                 = (ggml_to_float_t) dequantize_row_f16e3,
+         .from_float_ref           = NULL, // encoded on the GPU only (needs the overflow pool)
+     },
++    [GGML_TYPE_Q4O] = {
++        .type_name                = "q4o",
++        .blck_size                = QK_Q4O,
++        .type_size                = sizeof(block_q4o),
++        .is_quantized             = true,
++        .to_float                 = (ggml_to_float_t) dequantize_row_q4o,
++        .from_float_ref           = NULL, // encoded on the GPU only
++    },
+     [GGML_TYPE_Q8_1] = {
+         .type_name                = "q8_1",
+         .blck_size                = QK8_1,
+diff --git a/tools/llama-bench/llama-bench.cpp b/tools/llama-bench/llama-bench.cpp
+index a53c5c2f..90411b1e 100644
+--- a/tools/llama-bench/llama-bench.cpp
++++ b/tools/llama-bench/llama-bench.cpp
+@@ -524,6 +524,9 @@ static ggml_type ggml_type_from_name(const std::string & s) {
+     if (s == "f16e3") { // cq/kv-compress (lossless)
+         return GGML_TYPE_F16E3;
+     }
++    if (s == "q4o") { // cq/kv-compress
++        return GGML_TYPE_Q4O;
++    }
+ 
+     return GGML_TYPE_COUNT;
+ }
+-- 
+2.54.0.windows.1
+

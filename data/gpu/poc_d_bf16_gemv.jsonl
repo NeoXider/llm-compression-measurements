@@ -1,0 +1,1 @@
+{"rows":49152,"cols":2048,"escape_rate":0.0230,"bytes_bf16":201326592,"bytes_ours":144070612,"size_vs_base":0.7156,"gemv_ms_bf16":0.24621,"gemv_ms_ours":0.35953,"speed_vs_base":0.685,"GBps_bf16":817.7,"GBps_ours_stored":400.7,"decode_bit_exact":true,"gemv_output_identical":true}

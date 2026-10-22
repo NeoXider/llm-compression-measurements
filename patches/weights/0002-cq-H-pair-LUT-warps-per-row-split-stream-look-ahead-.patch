@@ -1,0 +1,294 @@
+From a105371871e4ca0e3d3811c79afeed90146eed30 Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:14:55 +0500
+Subject: [PATCH 2/3] cq: H pair LUT, warps-per-row split, stream look-ahead;
+ kbench in-graph repetition; diagnostics env
+
+---
+ ggml/src/ggml-cq.c             |  4 +-
+ ggml/src/ggml-cq.h             |  2 +-
+ ggml/src/ggml-cuda/cqw.cu      | 86 +++++++++++++++++++++++++++++-----
+ tools/cq-convert/cq-logits.cpp | 17 +++++++
+ 4 files changed, 93 insertions(+), 16 deletions(-)
+
+diff --git a/ggml/src/ggml-cq.c b/ggml/src/ggml-cq.c
+index d2b9382d..f1754904 100644
+--- a/ggml/src/ggml-cq.c
++++ b/ggml/src/ggml-cq.c
+@@ -343,7 +343,7 @@ int ggml_cq_encode_bf16h(const uint16_t * src, int64_t ne0, int64_t ne1, int lut
+         return err;
+     }
+     rows[ne1] = (uint32_t) bw.n;
+-    for (int k = 0; k < 4; ++k) cq_bw_word(&bw, 0);
++    for (int k = 0; k < 16; ++k) cq_bw_word(&bw, 0); // padding: the GPU reader looks ahead
+ 
+     ggml_cq_header h;
+     memset(&h, 0, sizeof(h));
+@@ -363,7 +363,7 @@ int ggml_cq_encode_bf16h(const uint16_t * src, int64_t ne0, int64_t ne1, int lut
+     h.off_rows   = off; off = cq_pad16(off + (size_t) (ne1 + 1)*4);
+     h.off_anchor = off; off = cq_pad16(off + (size_t) ne1*na*2);
+     h.off_stream = off; off = cq_pad16(off + bw.n*4);
+-    h.n_words    = bw.n - 4;
++    h.n_words    = bw.n - 16;
+     h.total      = off;
+ 
+     uint8_t * comp = (uint8_t *) calloc(1, off);
+diff --git a/ggml/src/ggml-cq.h b/ggml/src/ggml-cq.h
+index 70b02599..040d8f35 100644
+--- a/ggml/src/ggml-cq.h
++++ b/ggml/src/ggml-cq.h
+@@ -69,7 +69,7 @@ typedef struct {
+     uint64_t off_lut;       // HUFF: u16[lut_n]
+     uint64_t off_rows;      // HUFF: u32[ne1 + 1], first stream word of each row (rows start word-aligned)
+     uint64_t off_anchor;    // HUFF: u16[ne1*32], bit offset of each lane sub-stream relative to the row start
+-    uint64_t off_stream;    // HUFF: u32[n_words + 4] (4 zero words of padding), bit 31 of a word comes first
++    uint64_t off_stream;    // HUFF: u32[n_words + 16] (16 zero words of padding), bit 31 of a word comes first
+     uint64_t n_words;       // HUFF
+     uint64_t n_esc;         // ESCAPE: number of escapes
+     uint64_t off_esc_rows;  // ESCAPE: u32[ne1 + 1], first escape of each row
+diff --git a/ggml/src/ggml-cuda/cqw.cu b/ggml/src/ggml-cuda/cqw.cu
+index 43b5fff2..71e9e562 100644
+--- a/ggml/src/ggml-cuda/cqw.cu
++++ b/ggml/src/ggml-cuda/cqw.cu
+@@ -20,6 +20,9 @@
+ #define CQ_LUT_MAX 2048
+ #define CQ_P       8                  // single-symbol LUT index bits (the converter only writes 8)
+ #define CQ_PB      GGML_CQ_PLUT_BITS  // pair LUT index bits
++#ifndef CQ_LA
++#define CQ_LA      4                  // stream words of look-ahead per lane
++#endif
+ 
+ static __device__ __forceinline__ float cq_make(const uint32_t sm, const uint32_t ex) {
+     return __uint_as_float(((sm & 0x80u) << 24) | (ex << 23) | ((sm & 0x7Fu) << 16));
+@@ -76,6 +79,10 @@ static __device__ __forceinline__ uint32_t cq_byte_get(const uint32_t * w, const
+ struct cq_luts {
+     const uint16_t * lut;   // single-symbol LUT (shared memory)
+     const uint32_t * plut;  // pair LUT (shared memory)
++    int dbg;                // diagnostics only (CQ_DBG): 1 = no pair LUT, 2 = no stream loads, 4 = no LUT loads,
++                            // 8 = no shared LUT copy, 16 = read the LUTs from global memory (__ldg)
++    const uint16_t * glut;  // global copies (dbg 16)
++    const uint32_t * gplut;
+ };
+ 
+ template <int S>
+@@ -86,6 +93,7 @@ struct cq_dec_h {
+     const uint32_t * __restrict__ stream;
+     const uint8_t  * __restrict__ main_row;
+     uint32_t cur, nxt, pos, next;
++    uint32_t la[CQ_LA];                 // look-ahead words: the refill load is issued CQ_LA words before it is needed
+     int      s0;
+     uint32_t smw[NW], smn[NW];
+ 
+@@ -102,15 +110,26 @@ struct cq_dec_h {
+         pos  = bit & 31;
+         cur  = __ldg(stream + wi);
+         nxt  = __ldg(stream + wi + 1);
+-        next = wi + 2;
++#pragma unroll
++        for (int k = 0; k < CQ_LA; ++k) {
++            la[k] = __ldg(stream + wi + 2 + k);
++        }
++        next = wi + 2 + CQ_LA;
+     }
+ 
++    int dbg = 0;
++
+     __device__ __forceinline__ void adv(const uint32_t l) {
+         pos += l;
+         if (pos >= 32) {
+             pos -= 32;
+             cur = nxt;
+-            nxt = __ldg(stream + next);
++            nxt = la[0];
++#pragma unroll
++            for (int k = 0; k < CQ_LA - 1; ++k) {
++                la[k] = la[k + 1];
++            }
++            la[CQ_LA - 1] = (dbg & 2) ? (cur ^ next) : __ldg(stream + next);  // dbg 2: no stream loads (diagnostics)
+             next++;
+         }
+     }
+@@ -126,6 +145,17 @@ struct cq_dec_h {
+         return e & 0xFFu;
+     }
+ 
++    __device__ __forceinline__ uint32_t sym_g(const uint16_t * __restrict__ lut) {
++        const uint32_t peek = __funnelshift_l(nxt, cur, pos);
++        uint32_t e = __ldg(lut + (peek >> (32 - CQ_P)));
++        if (e & 0x8000u) {
++            const uint32_t sub = (e >> 11) & 15;
++            e = __ldg(lut + (e & 0x7FFu) + ((peek << CQ_P) >> (32 - sub)));
++        }
++        adv((e >> 8) & 31);
++        return e & 0xFFu;
++    }
++
+     __device__ __forceinline__ void load(const int b, const int lane) {
+         cq_load_sm<S>(main_row + (size_t) b*GGML_CQ_BLCK + lane*16 + 2*s0, smn);
+     }
+@@ -137,12 +167,24 @@ struct cq_dec_h {
+     __device__ __forceinline__ void pair(const int i, const int b, const int lane, const int row, const cq_luts & L, float & x0, float & x1) {
+         const uint32_t sm   = cq_sm_get<S>(smw, i);
+         const uint32_t peek = __funnelshift_l(nxt, cur, pos);
+-        const uint32_t pe   = L.plut[peek >> (32 - CQ_PB)];
++        uint32_t pe;
++        if (L.dbg & 4) {
++            pe = 0x80000000u | (5u << 16) | (peek >> 16);   // fake decode without shared-memory lookups
++        } else if (L.dbg & 1) {
++            pe = 0;                                       // always the single-symbol path
++        } else if (L.dbg & 16) {
++            pe = __ldg(L.gplut + (peek >> (32 - CQ_PB)));
++        } else {
++            pe = L.plut[peek >> (32 - CQ_PB)];
++        }
+         uint32_t e0, e1;
+         if (pe & 0x80000000u) {
+             e0 = pe & 0xFFu;
+             e1 = (pe >> 8) & 0xFFu;
+             adv((pe >> 16) & 31);
++        } else if (L.dbg & 16) {
++            e0 = sym_g(L.glut);
++            e1 = sym_g(L.glut);
+         } else {
+             e0 = sym(L.lut);
+             e1 = sym(L.lut);
+@@ -294,7 +336,7 @@ static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_mmv_kernel(
+         const uint8_t * xm, const uint8_t * xc, const uint8_t * gm, const uint8_t * gc,
+         const float * __restrict__ y, float * __restrict__ dst,
+         const float * __restrict__ x_bias, const float * __restrict__ gate_bias,
+-        const int ncols, const int nrows, const int glu_op, const float glu_limit) {
++        const int ncols, const int nrows, const int glu_op, const float glu_limit, const int dbg) {
+     constexpr int S   = 8/G;          // steps (virtual warps) per warp
+     constexpr int RPB = CQ_WARPS/G;   // rows per block iteration
+     using dec_t = dec_tt<S>;
+@@ -303,19 +345,25 @@ static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_mmv_kernel(
+ 
+     extern __shared__ char cq_smem_raw[];
+     cq_smem_luts * tabs = (cq_smem_luts *) cq_smem_raw;
+-    float * red = (float *) (cq_smem_raw + NL*sizeof(cq_smem_luts)); // [2][RPB][8]
++    float * red = (float *) (cq_smem_raw + ((dbg & 24) ? 0 : NL*sizeof(cq_smem_luts))); // [2][RPB][8]
+ 
+     if constexpr (LUT) {
+-        cq_load_luts(xc, tabs[0]);
+-        if constexpr (has_gate) {
+-            cq_load_luts(gc, tabs[NL - 1]);
++        if (!(dbg & 24)) {
++            cq_load_luts(xc, tabs[0]);
++            if constexpr (has_gate) {
++                cq_load_luts(gc, tabs[NL - 1]);
++            }
+         }
+         __syncthreads();
+     }
+     cq_luts Lx = {}, Lg = {};
+     if constexpr (LUT) {
+-        Lx = { tabs[0].lut,      tabs[0].plut };
+-        Lg = { tabs[NL - 1].lut, tabs[NL - 1].plut };
++        const ggml_cq_header * hx = (const ggml_cq_header *) xc;
++        Lx = { tabs[0].lut, tabs[0].plut, dbg, (const uint16_t *) (xc + hx->off_lut), (const uint32_t *) (xc + hx->off_plut) };
++        if constexpr (has_gate) {
++            const ggml_cq_header * hg = (const ggml_cq_header *) gc;
++            Lg = { tabs[NL - 1].lut, tabs[NL - 1].plut, dbg, (const uint16_t *) (gc + hg->off_lut), (const uint32_t *) (gc + hg->off_plut) };
++        }
+     }
+ 
+     const int lane = threadIdx.x % WARP_SIZE;
+@@ -334,9 +382,15 @@ static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_mmv_kernel(
+         [[maybe_unused]] dec_t dg;
+         dx.init(xm, xc, rowc, ncols, lane, g);
+         dx.load(0, lane);
++        if constexpr (LUT) {
++            dx.dbg = dbg;
++        }
+         if constexpr (has_gate) {
+             dg.init(gm, gc, rowc, ncols, lane, g);
+             dg.load(0, lane);
++            if constexpr (LUT) {
++                dg.dbg = dbg;
++            }
+         }
+         float sx[S];
+         [[maybe_unused]] float sg[S];
+@@ -468,7 +522,7 @@ static __global__ void __launch_bounds__(CQ_WARPS*WARP_SIZE) cq_to_bf16_kernel(
+     if constexpr (dec_t::uses_lut) {
+         cq_load_luts(xc, tabs[0]);
+         __syncthreads();
+-        L = { tabs[0].lut, tabs[0].plut };
++        L = { tabs[0].lut, tabs[0].plut, 0, nullptr, nullptr };
+     }
+     const int lane = threadIdx.x % WARP_SIZE;
+     const int warp = threadIdx.x / WARP_SIZE;
+@@ -540,6 +594,11 @@ static int cq_env_int(const char * name, int def) {
+     return e ? atoi(e) : def;
+ }
+ 
++static int cq_dbg() {
++    static const int dbg = cq_env_int("CQ_DBG", 0);
++    return dbg;
++}
++
+ // warps per row: fixed by the format for Huffman, free for the fixed-rate types
+ static int cq_split(const ggml_tensor * t) {
+     if (t->type == GGML_TYPE_CQ_BF16H) {
+@@ -571,11 +630,12 @@ static void cq_launch_mmv_g(const ggml_tensor * src0, const ggml_tensor * gate,
+     const dim3 grid(cq_grid(nrows, G));
+     const dim3 block(CQ_WARPS*WARP_SIZE);
+     constexpr bool LUT = dec_tt<8/G>::uses_lut;
+-    const size_t smem = (LUT ? (has_gate ? 2 : 1)*sizeof(cq_smem_luts) : 0) + 2*(CQ_WARPS/G)*8*sizeof(float);
++    static const int smem_pad = cq_env_int("CQ_SMEM_PAD", 0);   // diagnostics: extra dynamic shared memory
++    const size_t smem = ((LUT && !(cq_dbg() & 24)) ? (has_gate ? 2 : 1)*sizeof(cq_smem_luts) : 0) + 2*(CQ_WARPS/G)*8*sizeof(float) + smem_pad;
+     static_assert(2*sizeof(cq_smem_luts) + 2*CQ_WARPS*8*sizeof(float) <= 48*1024, "dynamic shared memory above 48 KiB needs an opt-in");
+     cq_mmv_kernel<dec_tt, has_gate, G><<<grid, block, smem, stream>>>((const uint8_t *) src0->data, cq_companion(src0),
+         gate ? (const uint8_t *) gate->data : nullptr, gate ? cq_companion(gate) : nullptr, y, dst,
+-        x_bias, gate_bias, ncols, nrows, glu_op, glu_limit);
++        x_bias, gate_bias, ncols, nrows, glu_op, glu_limit, cq_dbg());
+     CUDA_CHECK(cudaGetLastError());
+ }
+ 
+diff --git a/tools/cq-convert/cq-logits.cpp b/tools/cq-convert/cq-logits.cpp
+index a9dd1a20..e7e98cc8 100644
+--- a/tools/cq-convert/cq-logits.cpp
++++ b/tools/cq-convert/cq-logits.cpp
+@@ -10,6 +10,7 @@
+ 
+ #include "llama.h"
+ 
++#include <chrono>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+@@ -22,6 +23,7 @@ int main(int argc, char ** argv) {
+     std::string model, prompt_file, out;
+     int  n_gen = 32, ngl = 99, n_ctx = 4096;
+     bool per_token = false;
++    bool load_only = false;
+     for (int i = 1; i < argc; ++i) {
+         const std::string a = argv[i];
+         if      (a == "-m" && i + 1 < argc) model = argv[++i];
+@@ -31,8 +33,23 @@ int main(int argc, char ** argv) {
+         else if (a == "--ngl" && i + 1 < argc) ngl = atoi(argv[++i]);
+         else if (a == "--ctx" && i + 1 < argc) n_ctx = atoi(argv[++i]);
+         else if (a == "--per-token") per_token = true;
++        else if (a == "--load-only") load_only = true;
+         else { fprintf(stderr, "bad arg %s\n", a.c_str()); return 1; }
+     }
++    if (load_only && !model.empty()) {
++        // model load time (file -> GPU buffers), wall clock
++        llama_backend_init();
++        llama_model_params mp = llama_model_default_params();
++        mp.n_gpu_layers = ngl;
++        const auto t0 = std::chrono::steady_clock::now();
++        llama_model * mdl = llama_model_load_from_file(model.c_str(), mp);
++        const auto t1 = std::chrono::steady_clock::now();
++        if (!mdl) { fprintf(stderr, "load failed\n"); return 1; }
++        printf("load_ms %.1f\n", std::chrono::duration<double, std::milli>(t1 - t0).count());
++        llama_model_free(mdl);
++        llama_backend_free();
++        return 0;
++    }
+     if (model.empty() || prompt_file.empty() || out.empty()) {
+         fprintf(stderr, "usage: %s -m MODEL -f PROMPT -o OUT.bin [-n N] [--per-token]\n", argv[0]);
+         return 1;
+-- 
+2.54.0.windows.1
+

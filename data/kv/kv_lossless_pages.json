@@ -1,0 +1,272 @@
+{
+ "state": "<project-repo>\\kv-captures\\native\\m1k-diagnostic-f16-p2048-20260928-01\\state.bin",
+ "tokens": 2304,
+ "layers": "all",
+ "field_entropy_bits": {
+  "K": {
+   "sign_bits": 0.9999978611588988,
+   "exponent_bits": 2.893269651273609,
+   "mantissa_bits": 9.971509398393152
+  },
+  "V": {
+   "sign_bits": 0.9999999995748403,
+   "exponent_bits": 3.310447294276599,
+   "mantissa_bits": 9.971357157011166
+  }
+ },
+ "roundtrip": "every page byte-exact",
+ "results": {
+  "P16/zlib_plain": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 158933719,
+    "ratio": 0.9356234927236298,
+    "pages": 5184
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 156943455,
+    "ratio": 0.9239070503800003,
+    "pages": 5184
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 315877174,
+    "ratio": 0.9297652715518151,
+    "cpu_encode_MBps": 37.905727624733615,
+    "cpu_decode_MBps": 235.2892048710085
+   }
+  },
+  "P16/zlib_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 150863420,
+    "ratio": 0.888114623081537,
+    "pages": 5184
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 149190987,
+    "ratio": 0.8782692132172761,
+    "pages": 5184
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 300054407,
+    "ratio": 0.8831919181494066,
+    "cpu_encode_MBps": 36.865276843394625,
+    "cpu_decode_MBps": 243.73506306507642
+   }
+  },
+  "P16/lzma_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 150006675,
+    "ratio": 0.8830710693641945,
+    "pages": 5184
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 146932360,
+    "ratio": 0.8649729504997348,
+    "pages": 5184
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 296939035,
+    "ratio": 0.8740220099319647,
+    "cpu_encode_MBps": 3.3287762827936405,
+    "cpu_decode_MBps": 20.43660080439347
+   }
+  },
+  "P16/zlib_exp": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 154100725,
+    "ratio": 0.9071722442721143,
+    "pages": 5184
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 152183206,
+    "ratio": 0.8958840429047008,
+    "pages": 5184
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 306283931,
+    "ratio": 0.9015281435884075,
+    "cpu_encode_MBps": 17.586643207908114,
+    "cpu_decode_MBps": 119.93193780596526
+   }
+  },
+  "P64/zlib_plain": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 158825669,
+    "ratio": 0.9349874155021008,
+    "pages": 1296
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 156445801,
+    "ratio": 0.9209774217487853,
+    "pages": 1296
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 315271470,
+    "ratio": 0.9279824186254431,
+    "cpu_encode_MBps": 27.739450793003005,
+    "cpu_decode_MBps": 237.90138948851765
+   }
+  },
+  "P64/zlib_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 149553817,
+    "ratio": 0.8804051493421013,
+    "pages": 1296
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 146546985,
+    "ratio": 0.8627042946992097,
+    "pages": 1296
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 296100802,
+    "ratio": 0.8715547220206555,
+    "cpu_encode_MBps": 24.66559101494978,
+    "cpu_decode_MBps": 251.19254761943938
+   }
+  },
+  "P64/lzma_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 146930950,
+    "ratio": 0.8649646500010549,
+    "pages": 1296
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 143619062,
+    "ratio": 0.8454679677515854,
+    "pages": 1296
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 290550012,
+    "ratio": 0.8552163088763202,
+    "cpu_encode_MBps": 4.69047872975223,
+    "cpu_decode_MBps": 37.58796517320937
+   }
+  },
+  "P64/zlib_exp": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 153260113,
+    "ratio": 0.9022236635655533,
+    "pages": 1296
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 151294663,
+    "ratio": 0.8906532982249319,
+    "pages": 1296
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 304554776,
+    "ratio": 0.8964384808952426,
+    "cpu_encode_MBps": 9.424328639776505,
+    "cpu_decode_MBps": 81.6614330315657
+   }
+  },
+  "P256/zlib_plain": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 158795550,
+    "ratio": 0.9348101086086698,
+    "pages": 324
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 156302586,
+    "ratio": 0.9201343324449327,
+    "pages": 324
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 315098136,
+    "ratio": 0.9274722205268012,
+    "cpu_encode_MBps": 15.43628701477212,
+    "cpu_decode_MBps": 147.8337910467354
+   }
+  },
+  "P256/zlib_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 148394438,
+    "ratio": 0.8735800260378991,
+    "pages": 324
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 145133987,
+    "ratio": 0.8543861471576455,
+    "pages": 324
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 293528425,
+    "ratio": 0.8639830865977723,
+    "cpu_encode_MBps": 12.796586896041331,
+    "cpu_decode_MBps": 159.44032810885676
+   }
+  },
+  "P256/lzma_planes": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 145709612,
+    "ratio": 0.8577747815920983,
+    "pages": 324
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 142016757,
+    "ratio": 0.8360353929025156,
+    "pages": 324
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 287726369,
+    "ratio": 0.846905087247307,
+    "cpu_encode_MBps": 2.920010724855959,
+    "cpu_decode_MBps": 24.157551848107342
+   }
+  },
+  "P256/zlib_exp": {
+   "K": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 152687685,
+    "ratio": 0.8988538494816533,
+    "pages": 324
+   },
+   "V": {
+    "raw_bytes": 169869312,
+    "coded_bytes": 150736069,
+    "ratio": 0.8873649232181502,
+    "pages": 324
+   },
+   "all": {
+    "raw_bytes": 339738624,
+    "coded_bytes": 303423754,
+    "ratio": 0.8931093863499018,
+    "cpu_encode_MBps": 6.488336645316936,
+    "cpu_decode_MBps": 52.93437144359021
+   }
+  }
+ }
+}

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.gguf
+*.bin
+*.npy
+*.npz
+*.log
+poc/bin/
+.venv/
+*.exe
+*.obj
+*.pdb
+*.lib
+*.exp
+.DS_Store

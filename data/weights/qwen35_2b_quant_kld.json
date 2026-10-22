@@ -1,0 +1,230 @@
+[
+ {
+  "label": "BF16",
+  "log": "work\\qwen35_2b\\kld_BF16.log",
+  "log_sha256": "7745259b3da8c6c27e816cbf4c0fe470deae8f234e57b1753e63f48c663e6e47",
+  "ppl_q": [
+   64.686104,
+   2.231709
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": [
+   0.998672,
+   0.000662
+  ],
+  "kld_mean": [
+   0.001327,
+   1.3e-05
+  ],
+  "kld_median": [
+   0.001104
+  ],
+  "kld_p99": [
+   0.006245
+  ],
+  "kld_max": [
+   0.029092
+  ],
+  "same_top_pct": [
+   96.123,
+   0.182
+  ],
+  "rms_dp_pct": [
+   0.712,
+   0.018
+  ],
+  "file_bytes": 3897387968,
+  "llama_quant_size_mib": null,
+  "llama_bpw": null
+ },
+ {
+  "label": "Q6_K",
+  "log": "work\\qwen35_2b\\kld_Q6_K.log",
+  "log_sha256": "4040957bc4bd8db93b625f77fe1256705bce6ba99ded177b10a6fada0ac63bd5",
+  "ppl_q": [
+   65.498294,
+   2.26415
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": [
+   1.011211,
+   0.00161
+  ],
+  "kld_mean": [
+   0.010632,
+   9.8e-05
+  ],
+  "kld_median": [
+   0.009027
+  ],
+  "kld_p99": [
+   0.04593
+  ],
+  "kld_max": [
+   0.199287
+  ],
+  "same_top_pct": [
+   87.923,
+   0.308
+  ],
+  "rms_dp_pct": [
+   1.969,
+   0.046
+  ],
+  "file_bytes": 1606324160,
+  "llama_quant_size_mib": 1521.46,
+  "llama_bpw": 6.57
+ },
+ {
+  "label": "Q5_K_M",
+  "log": "work\\qwen35_2b\\kld_Q5_K_M.log",
+  "log_sha256": "44080e70b39d60eb8192bf56c219ead3020640eef5306d2a3a5162e8282d09c3",
+  "ppl_q": [
+   66.028421,
+   2.29256
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": [
+   1.019395,
+   0.002253
+  ],
+  "kld_mean": [
+   0.020594,
+   0.000203
+  ],
+  "kld_median": [
+   0.016663
+  ],
+  "kld_p99": [
+   0.093842
+  ],
+  "kld_max": [
+   0.391658
+  ],
+  "same_top_pct": [
+   86.23,
+   0.325
+  ],
+  "rms_dp_pct": [
+   2.753,
+   0.071
+  ],
+  "file_bytes": 1454787520,
+  "llama_quant_size_mib": 1376.94,
+  "llama_bpw": 5.95
+ },
+ {
+  "label": "Q4_K_M",
+  "log": "work\\qwen35_2b\\kld_Q4_K_M.log",
+  "log_sha256": "15da9061b3df3a591b58a589e6673cab84f7561a2ff1651951afb907fbd92011",
+  "ppl_q": [
+   67.889696,
+   2.360764
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": [
+   1.048131,
+   0.003969
+  ],
+  "kld_mean": [
+   0.06016,
+   0.000595
+  ],
+  "kld_median": [
+   0.047761
+  ],
+  "kld_p99": [
+   0.281964
+  ],
+  "kld_max": [
+   1.078821
+  ],
+  "same_top_pct": [
+   78.939,
+   0.385
+  ],
+  "rms_dp_pct": [
+   4.718,
+   0.119
+  ],
+  "file_bytes": 1312164800,
+  "llama_quant_size_mib": 1240.92,
+  "llama_bpw": 5.36
+ },
+ {
+  "label": "Q3_K_M",
+  "log": "work\\qwen35_2b\\kld_Q3_K_M.log",
+  "log_sha256": "5ebba4b9cfa427b706abe56baba5e36f953ba5f038e38d4c9a1a81d97f9384d5",
+  "ppl_q": [
+   77.982425,
+   2.723226
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": [
+   1.20395,
+   0.009139
+  ],
+  "kld_mean": [
+   0.240529,
+   0.002511
+  ],
+  "kld_median": [
+   0.183706
+  ],
+  "kld_p99": [
+   1.240195
+  ],
+  "kld_max": [
+   5.95169
+  ],
+  "same_top_pct": [
+   67.291,
+   0.443
+  ],
+  "rms_dp_pct": [
+   10.041,
+   0.21
+  ],
+  "file_bytes": 1127802816,
+  "llama_quant_size_mib": 1065.1,
+  "llama_bpw": 4.6
+ },
+ {
+  "label": "Q2_K",
+  "log": "work\\qwen35_2b\\kld_Q2_K.log",
+  "log_sha256": "ae73c4daf5d9f2c859de582d2db4e43aee7f6a966d5add8329c667920c0221fa",
+  "ppl_q": [
+   314.468926,
+   11.824514
+  ],
+  "ppl_base": [
+   64.772142,
+   2.232907
+  ],
+  "ppl_ratio": null,
+  "kld_mean": null,
+  "kld_median": null,
+  "kld_p99": null,
+  "kld_max": null,
+  "same_top_pct": null,
+  "rms_dp_pct": null,
+  "file_bytes": 990491584,
+  "llama_quant_size_mib": 934.15,
+  "llama_bpw": 4.03
+ }
+]

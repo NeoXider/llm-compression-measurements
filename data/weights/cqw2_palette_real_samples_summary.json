@@ -1,0 +1,1 @@
+{"tensor_count": 216, "sample_count": 648, "totals": {"native_bytes": 19906560, "frame_bytes": 20028366, "metadata_bytes": 122688, "payload_bytes": 19905678, "blocks_by_mode": [138217, 0, 6, 17], "frame_to_native_ratio": 1.0061188874421296}}

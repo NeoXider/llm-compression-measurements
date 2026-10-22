@@ -1,0 +1,15 @@
+{
+ "qwen35-2b-BF16.gguf": {
+  "base": 3886425344,
+  "native_zlib64k": 3089996233,
+  "split_zlib64k": 2746160270,
+  "split_lzma256k": 3886425344,
+  "huffman": 2586565039.125,
+  "ratio_vs_base": {
+   "native_zlib64k": 0.795074125834025,
+   "split_zlib64k": 0.7066031190434724,
+   "split_lzma256k": 1.0,
+   "huffman": 0.6655383315462962
+  }
+ }
+}

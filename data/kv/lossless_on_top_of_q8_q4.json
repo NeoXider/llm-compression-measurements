@@ -1,0 +1,69 @@
+{
+ "tokens": 2304,
+ "results": {
+  "q8_0": {
+   "K": {
+    "base_bytes": 90243072,
+    "ratio_vs_base": {
+     "huffman_codes": 0.9168123759129122,
+     "fixed_escape": 1.062706353790793,
+     "native_zlib_P64": 0.9215715085585738,
+     "split_zlib_P64": 0.9044266134911719,
+     "split_lzma_P64": 0.9006199390020765,
+     "native_zlib_P256": 0.9200250518953965,
+     "split_zlib_P256": 0.9027780991320863,
+     "split_lzma_P256": 0.8919461651305487
+    },
+    "fixed_escape_rate": 0.16037550090271752,
+    "base_bits_per_element": 8.5
+   },
+   "V": {
+    "base_bytes": 90243072,
+    "ratio_vs_base": {
+     "huffman_codes": 0.9545763385581555,
+     "fixed_escape": 1.1146975027623174,
+     "native_zlib_P64": 0.9479738677335807,
+     "split_zlib_P64": 0.9331173588594147,
+     "split_lzma_P64": 0.9393842332849662,
+     "native_zlib_P256": 0.9452983714916088,
+     "split_zlib_P256": 0.9303125452112269,
+     "split_lzma_P256": 0.9310564471918686
+    },
+    "fixed_escape_rate": 0.21561609668496215,
+    "base_bits_per_element": 8.5
+   }
+  },
+  "q4_0": {
+   "K": {
+    "base_bytes": 47775744,
+    "ratio_vs_base": {
+     "huffman_codes": 0.8692917189316821,
+     "fixed_escape": 1.0093516597041376,
+     "native_zlib_P64": 0.8605413449971601,
+     "split_zlib_P64": 0.8335500751176161,
+     "split_lzma_P64": 0.816137494373714,
+     "native_zlib_P256": 0.8545107952688293,
+     "split_zlib_P256": 0.8279445109216929,
+     "split_lzma_P256": 0.7903546410496506
+    },
+    "fixed_escape_rate": 0.19802061716715494,
+    "base_bits_per_element": 4.5
+   },
+   "V": {
+    "base_bytes": 47775744,
+    "ratio_vs_base": {
+     "huffman_codes": 0.9345550170814713,
+     "fixed_escape": 1.0734711216637463,
+     "native_zlib_P64": 0.9281875338246957,
+     "split_zlib_P64": 0.8992229194798097,
+     "split_lzma_P64": 0.8938859643923075,
+     "native_zlib_P256": 0.920921315218032,
+     "split_zlib_P256": 0.8922742678795332,
+     "split_lzma_P256": 0.868901654362515
+    },
+    "fixed_escape_rate": 0.27015501187171465,
+    "base_bits_per_element": 4.5
+   }
+  }
+ }
+}

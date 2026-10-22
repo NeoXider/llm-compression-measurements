@@ -1,0 +1,98 @@
+From 0499d389259f866599e3adfdc81c00a85bbf2b0f Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:57:20 +0500
+Subject: [PATCH 7/7] cq: f16e3 group escape mask (skip the escape scan for
+ groups without escapes, 7 escape slots); q4o outlier patch without local
+ memory
+
+---
+ ggml/src/ggml-common.h              |  5 +++--
+ ggml/src/ggml-cuda/fattn-common.cuh | 10 ++++++----
+ ggml/src/ggml-cuda/set-rows.cu      |  8 ++++++++
+ 3 files changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/ggml/src/ggml-common.h b/ggml/src/ggml-common.h
+index 75d2016f..6fe14a45 100644
+--- a/ggml/src/ggml-common.h
++++ b/ggml/src/ggml-common.h
+@@ -269,12 +269,13 @@ static_assert(sizeof(block_f16d4) == 3*QK_F16D4/2, "wrong f16d4 block size/paddi
+ 
+ // cq/kv-compress: lossless F16 superblock of 128 values (see ggml/src/ggml-cuda/set-rows.cu for the encoder)
+ #define QK_F16E3 128
+-#define F16E3_MAX_ESC 8
++#define F16E3_MAX_ESC 7      // esc[0..6]: escapes
++#define F16E3_MASK_SLOT 7    // esc[7]: bit g set if the 8-value group g contains an escape
+ typedef struct {
+     uint32_t hdr;                    // 4 x 5-bit base exponents | n_esc << 20 | overflow << 31
+     uint8_t  f6[QK_F16E3*6/8];       // code(3) | sign << 3 | m9..m8 << 4, 48 bits per 8 values
+     uint8_t  mlo[QK_F16E3];          // mantissa bits 7..0
+-    uint16_t esc[F16E3_MAX_ESC];     // index (7 bits) | exponent << 7
++    uint16_t esc[F16E3_MAX_ESC + 1]; // index (7 bits) | exponent << 7; last slot = group escape mask
+ } block_f16e3;
+ static_assert(sizeof(block_f16e3) == 244, "wrong f16e3 block size/padding");
+ 
+diff --git a/ggml/src/ggml-cuda/fattn-common.cuh b/ggml/src/ggml-cuda/fattn-common.cuh
+index 5e8cde14..bb33ece9 100644
+--- a/ggml/src/ggml-cuda/fattn-common.cuh
++++ b/ggml/src/ggml-cuda/fattn-common.cuh
+@@ -379,7 +379,7 @@ static __device__ __forceinline__ void f16e3_decode8(const block_f16e3 * __restr
+     for (int k = 0; k < 8; ++k) {
+         e[k] = base + ((uint32_t)(f >> (6*k)) & 7);
+     }
+-    const int n_esc = (hdr >> 20) & 15;
++    const int n_esc = ((b->esc[F16E3_MASK_SLOT] >> g) & 1) ? (hdr >> 20) & 15 : 0; // skip groups without escapes
+     for (int s = 0; s < n_esc; ++s) {
+         const uint32_t ent = b->esc[s];
+         const uint32_t d = (ent & 127) - (uint32_t) l0;
+@@ -431,9 +431,11 @@ static __device__ __forceinline__ void cq_decode8_h(const char * __restrict__ ro
+         for (int s = 0; s < 2; ++s) {
+             const uint32_t o = b->out[s];
+             const uint32_t k = ((o >> 16) & 127) - (uint32_t) l0;
+-            if (k < 8) {
+-                half * oh = (half *) out;
+-                oh[k] = __ushort_as_half((uint16_t)(o & 0xFFFF));
++            const half v = __ushort_as_half((uint16_t)(o & 0xFFFF));
++#pragma unroll
++            for (int l = 0; l < 4; ++l) { // compile-time indices only: keeps out[] in registers
++                if (k == (uint32_t)(2*l))     { out[l] = __halves2half2(v, __high2half(out[l])); }
++                if (k == (uint32_t)(2*l + 1)) { out[l] = __halves2half2(__low2half(out[l]), v); }
+             }
+         }
+     } else if constexpr (type == GGML_TYPE_Q8_0) {
+diff --git a/ggml/src/ggml-cuda/set-rows.cu b/ggml/src/ggml-cuda/set-rows.cu
+index 59f86b45..5b4f6148 100644
+--- a/ggml/src/ggml-cuda/set-rows.cu
++++ b/ggml/src/ggml-cuda/set-rows.cu
+@@ -140,10 +140,15 @@ static __device__ void quantize_f32_f16e3_block(const float * __restrict__ x, bl
+     }
+     if (!overflow) {
+         hdr |= (uint32_t) n_esc << 20;
++        uint32_t gmask = 0;
+ #pragma unroll
+         for (int s = 0; s < F16E3_MAX_ESC; ++s) {
+             y->esc[s] = s < n_esc ? esc[s] : 0;
++            if (s < n_esc) {
++                gmask |= 1u << ((esc[s] & 127) >> 3);
++            }
+         }
++        y->esc[F16E3_MASK_SLOT] = (uint16_t) gmask;
+         y->hdr = hdr;
+         return;
+     }
+@@ -152,10 +157,13 @@ static __device__ void quantize_f32_f16e3_block(const float * __restrict__ x, bl
+         // pool exhausted: keep the first 8 escapes (NOT lossless) and count the superblock
+         atomicAdd(&g_cq_f16e3_pool.counters[1], 1ull);
+         hdr |= (uint32_t) F16E3_MAX_ESC << 20;
++        uint32_t gmask = 0;
+ #pragma unroll
+         for (int s = 0; s < F16E3_MAX_ESC; ++s) {
+             y->esc[s] = esc[s];
++            gmask |= 1u << ((esc[s] & 127) >> 3);
+         }
++        y->esc[F16E3_MASK_SLOT] = (uint16_t) gmask;
+         y->hdr = hdr;
+         return;
+     }
+-- 
+2.54.0.windows.1
+

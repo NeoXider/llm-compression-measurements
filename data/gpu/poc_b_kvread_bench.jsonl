@@ -1,0 +1,17 @@
+{"device":"NVIDIA GeForce RTX 3090","sm":86,"reps":12,"iter":20}
+{"T":4096,"format":"f16","bytes":16777216,"ratio_vs_f16":1.0000,"escapes":0,"median_ms":0.07920,"min_ms":0.07404,"max_ms":0.09595,"GBps_stored":211.8,"GBps_f16_equiv":211.8,"rel_rms_err":0.000e+00}
+{"T":4096,"format":"q8_0","bytes":8912896,"ratio_vs_f16":0.5312,"escapes":0,"median_ms":0.07885,"min_ms":0.07163,"max_ms":0.08899,"GBps_stored":113.0,"GBps_f16_equiv":212.8,"rel_rms_err":1.232e-02}
+{"T":4096,"format":"q4_0","bytes":4718592,"ratio_vs_f16":0.2812,"escapes":0,"median_ms":0.07491,"min_ms":0.06533,"max_ms":0.07706,"GBps_stored":63.0,"GBps_f16_equiv":224.0,"rel_rms_err":1.074e-01}
+{"T":4096,"format":"exp3","bytes":16103874,"ratio_vs_f16":0.9599,"escapes":899522,"median_ms":0.12006,"min_ms":0.11428,"max_ms":0.15017,"GBps_stored":134.1,"GBps_f16_equiv":139.7,"rel_rms_err":0.000e+00,"bit_exact":true}
+{"T":8192,"format":"f16","bytes":33554432,"ratio_vs_f16":1.0000,"escapes":0,"median_ms":0.14218,"min_ms":0.13358,"max_ms":0.18831,"GBps_stored":236.0,"GBps_f16_equiv":236.0,"rel_rms_err":0.000e+00}
+{"T":8192,"format":"q8_0","bytes":17825792,"ratio_vs_f16":0.5312,"escapes":0,"median_ms":0.11863,"min_ms":0.11249,"max_ms":0.13373,"GBps_stored":150.3,"GBps_f16_equiv":282.9,"rel_rms_err":1.222e-02}
+{"T":8192,"format":"q4_0","bytes":9437184,"ratio_vs_f16":0.2812,"escapes":0,"median_ms":0.11423,"min_ms":0.11136,"max_ms":0.15570,"GBps_stored":82.6,"GBps_f16_equiv":293.8,"rel_rms_err":9.927e-02}
+{"T":8192,"format":"exp3","bytes":31632978,"ratio_vs_f16":0.9427,"escapes":1224274,"median_ms":0.18176,"min_ms":0.15406,"max_ms":0.19886,"GBps_stored":174.0,"GBps_f16_equiv":184.6,"rel_rms_err":0.000e+00,"bit_exact":true}
+{"T":16384,"format":"f16","bytes":67108864,"ratio_vs_f16":1.0000,"escapes":0,"median_ms":0.26476,"min_ms":0.23316,"max_ms":0.28744,"GBps_stored":253.5,"GBps_f16_equiv":253.5,"rel_rms_err":0.000e+00}
+{"T":16384,"format":"q8_0","bytes":35651584,"ratio_vs_f16":0.5312,"escapes":0,"median_ms":0.25559,"min_ms":0.19336,"max_ms":0.29435,"GBps_stored":139.5,"GBps_f16_equiv":262.6,"rel_rms_err":1.197e-02}
+{"T":16384,"format":"q4_0","bytes":18874368,"ratio_vs_f16":0.2812,"escapes":0,"median_ms":0.25098,"min_ms":0.20956,"max_ms":0.27930,"GBps_stored":75.2,"GBps_f16_equiv":267.4,"rel_rms_err":9.372e-02}
+{"T":16384,"format":"exp3","bytes":62872199,"ratio_vs_f16":0.9369,"escapes":2054791,"median_ms":0.36357,"min_ms":0.32271,"max_ms":0.40796,"GBps_stored":172.9,"GBps_f16_equiv":184.6,"rel_rms_err":0.000e+00,"bit_exact":true}
+{"T":32768,"format":"f16","bytes":134217728,"ratio_vs_f16":1.0000,"escapes":0,"median_ms":0.48461,"min_ms":0.44104,"max_ms":1.08012,"GBps_stored":277.0,"GBps_f16_equiv":277.0,"rel_rms_err":0.000e+00}
+{"T":32768,"format":"q8_0","bytes":71303168,"ratio_vs_f16":0.5312,"escapes":0,"median_ms":0.49270,"min_ms":0.45655,"max_ms":0.98381,"GBps_stored":144.7,"GBps_f16_equiv":272.4,"rel_rms_err":1.165e-02}
+{"T":32768,"format":"q4_0","bytes":37748736,"ratio_vs_f16":0.2812,"escapes":0,"median_ms":0.49469,"min_ms":0.45000,"max_ms":0.89390,"GBps_stored":76.3,"GBps_f16_equiv":271.3,"rel_rms_err":1.010e-01}
+{"T":32768,"format":"exp3","bytes":124996473,"ratio_vs_f16":0.9313,"escapes":3361657,"median_ms":0.72177,"min_ms":0.69166,"max_ms":1.45905,"GBps_stored":173.2,"GBps_f16_equiv":186.0,"rel_rms_err":0.000e+00,"bit_exact":true}

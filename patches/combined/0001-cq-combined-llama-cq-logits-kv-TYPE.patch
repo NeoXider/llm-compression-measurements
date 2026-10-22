@@ -1,0 +1,55 @@
+From 74b2da225667ae1507f8d5af7dd9e24bd70046ab Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:59:02 +0500
+Subject: [PATCH] cq/combined: llama-cq-logits --kv TYPE
+
+---
+ tools/cq-convert/cq-logits.cpp | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/tools/cq-convert/cq-logits.cpp b/tools/cq-convert/cq-logits.cpp
+index e7e98cc8..aaee3ca7 100644
+--- a/tools/cq-convert/cq-logits.cpp
++++ b/tools/cq-convert/cq-logits.cpp
+@@ -24,6 +24,7 @@ int main(int argc, char ** argv) {
+     int  n_gen = 32, ngl = 99, n_ctx = 4096;
+     bool per_token = false;
+     bool load_only = false;
++    std::string kv_type; // cq/combined: KV cache type for K and V (enables FlashAttention)
+     for (int i = 1; i < argc; ++i) {
+         const std::string a = argv[i];
+         if      (a == "-m" && i + 1 < argc) model = argv[++i];
+@@ -34,6 +35,7 @@ int main(int argc, char ** argv) {
+         else if (a == "--ctx" && i + 1 < argc) n_ctx = atoi(argv[++i]);
+         else if (a == "--per-token") per_token = true;
+         else if (a == "--load-only") load_only = true;
++        else if (a == "--kv" && i + 1 < argc) kv_type = argv[++i];
+         else { fprintf(stderr, "bad arg %s\n", a.c_str()); return 1; }
+     }
+     if (load_only && !model.empty()) {
+@@ -72,6 +74,22 @@ int main(int argc, char ** argv) {
+     cp.n_batch = n_ctx;
+     cp.n_ubatch = 512;
+     cp.no_perf = true;
++    if (!kv_type.empty()) {
++        ggml_type kt = GGML_TYPE_COUNT;
++        for (int ti = 0; ti < GGML_TYPE_COUNT; ++ti) {
++            const char * nm = ggml_type_name((ggml_type) ti);
++            if (nm && kv_type == nm) {
++                kt = (ggml_type) ti;
++            }
++        }
++        if (kt == GGML_TYPE_COUNT) {
++            fprintf(stderr, "unknown KV type %s\n", kv_type.c_str());
++            return 1;
++        }
++        cp.type_k = kt;
++        cp.type_v = kt;
++        cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
++    }
+     llama_context * ctx = llama_init_from_model(mdl, cp);
+     if (!ctx) { fprintf(stderr, "context failed\n"); return 1; }
+ 
+-- 
+2.54.0.windows.1
+

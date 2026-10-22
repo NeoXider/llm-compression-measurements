@@ -1,0 +1,78 @@
+{
+ "weights_q4k": {
+  "blocks_sampled": 3792960,
+  "zero_code_share": 0.04502757246319497,
+  "trivial_block_share": 0.0,
+  "single_code_subblock_share": 0.0002207378933603307,
+  "clipping": [
+   {
+    "p_percent": 0.1,
+    "outlier_share": 0.0009996383101851852,
+    "mean_group_range_ratio": 0.9966610670089722,
+    "q4_mse_no_clip": 6.121576461737277e-06,
+    "q4_mse_dense_after_clip": 4.819487912754994e-06,
+    "mse_ratio": 0.7872952241761666,
+    "side_list_bits_per_element": 0.03198842592592593
+   },
+   {
+    "p_percent": 1.0,
+    "outlier_share": 0.009999927662037037,
+    "mean_group_range_ratio": 0.9668887257575989,
+    "q4_mse_no_clip": 6.121576461737277e-06,
+    "q4_mse_dense_after_clip": 3.4097024581569713e-06,
+    "mse_ratio": 0.5569974465677608,
+    "side_list_bits_per_element": 0.3199976851851852
+   }
+  ]
+ },
+ "kv_f16": {
+  "K": {
+   "exact_zero_share": 4.709502797067901e-08,
+   "below_1e-3_of_layer_max_share": 0.033642698217321326,
+   "clipping": [
+    {
+     "p_percent": 0.1,
+     "outlier_share": 0.0009993489583333334,
+     "mean_group_range_ratio": 0.9735319018363953,
+     "q4_mse_no_clip": 0.15609651803970337,
+     "q4_mse_dense_after_clip": 0.09295371174812317,
+     "mse_ratio": 0.5954886945298822,
+     "side_list_bits_per_element": 0.03197916666666667
+    },
+    {
+     "p_percent": 1.0,
+     "outlier_share": 0.00999609375,
+     "mean_group_range_ratio": 0.8536596894264221,
+     "q4_mse_no_clip": 0.15609651803970337,
+     "q4_mse_dense_after_clip": 0.03745430335402489,
+     "mse_ratio": 0.23994323399640685,
+     "side_list_bits_per_element": 0.319875
+    }
+   ]
+  },
+  "V": {
+   "exact_zero_share": 1.1773756992669752e-07,
+   "below_1e-3_of_layer_max_share": 0.01893426165168668,
+   "clipping": [
+    {
+     "p_percent": 0.1,
+     "outlier_share": 0.0009984809027777778,
+     "mean_group_range_ratio": 0.9937389492988586,
+     "q4_mse_no_clip": 0.032396573573350906,
+     "q4_mse_dense_after_clip": 0.024012546986341476,
+     "mse_ratio": 0.7412063788774859,
+     "side_list_bits_per_element": 0.03195138888888889
+    },
+    {
+     "p_percent": 1.0,
+     "outlier_share": 0.009994791666666667,
+     "mean_group_range_ratio": 0.965901792049408,
+     "q4_mse_no_clip": 0.032396573573350906,
+     "q4_mse_dense_after_clip": 0.013565397821366787,
+     "mse_ratio": 0.41872940021427285,
+     "side_list_bits_per_element": 0.31983333333333336
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,47 @@
+From eb0ace3f458046aa73db78eaff6e9f8752d66690 Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 15:46:04 +0500
+Subject: [PATCH 5/7] cq: no attention rotation for the lossless f16e3 KV type
+ (logits are then bit-identical to F16 KV); f16e3 pool default 16 MiB
+
+---
+ ggml/src/ggml-cuda/set-rows.cu | 2 +-
+ src/llama-kv-cache.cpp         | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-cuda/set-rows.cu b/ggml/src/ggml-cuda/set-rows.cu
+index 7753ed05..59f86b45 100644
+--- a/ggml/src/ggml-cuda/set-rows.cu
++++ b/ggml/src/ggml-cuda/set-rows.cu
+@@ -19,7 +19,7 @@ void cq_f16e3_pool_init(int device) {
+         return;
+     }
+     const char * env = getenv("CQ_F16E3_POOL_MIB");
+-    const size_t mib = env ? (size_t) atoll(env) : 256;
++    const size_t mib = env ? (size_t) atoll(env) : 16; // measured use: < 1 MiB per 100K tokens (Qwen3-4B)
+     ggml_cuda_set_device(device);
+     cq_f16e3_pool_t p;
+     CUDA_CHECK(cudaMalloc((void **) &p.base, mib << 20));
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index e5ad893c..071eb744 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -352,6 +352,7 @@ llama_kv_cache::llama_kv_cache(
+             !attn_rot_disable &&
+             n_embd_head_k_all > 0 &&
+             ggml_is_quantized(type_k) &&
++            type_k != GGML_TYPE_F16E3 && // cq/kv-compress: lossless, the rotation would only change rounding
+             hparams.n_embd_head_k() % 64 == 0;
+ 
+         // always create Hadamard rotation tensors for DeepSeek lightning indexers
+@@ -365,6 +366,7 @@ llama_kv_cache::llama_kv_cache(
+             !attn_rot_disable &&
+             n_embd_head_v_all > 0 &&
+             ggml_is_quantized(type_v) &&
++            type_v != GGML_TYPE_F16E3 && // cq/kv-compress
+             hparams.n_embd_head_v() % 64 == 0;
+     }
+ 
+-- 
+2.54.0.windows.1
+

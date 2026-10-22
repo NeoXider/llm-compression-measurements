@@ -1,0 +1,147 @@
+{
+ "tokens": 2304,
+ "layers": 36,
+ "metric": "relative Frobenius error, mean over layers",
+ "formats": {
+  "q8_0": {
+   "K": {
+    "bits_per_element": 8.5,
+    "rel_err_mean": 0.008920822965188159,
+    "rel_err_max_layer": 0.012356957420706749,
+    "snr_db_mean": 41.21281475490994
+   },
+   "V": {
+    "bits_per_element": 8.5,
+    "rel_err_mean": 0.006042207539495494,
+    "rel_err_max_layer": 0.007466799113899469,
+    "snr_db_mean": 44.41327328152127
+   }
+  },
+  "q5_sym": {
+   "K": {
+    "bits_per_element": 5.5,
+    "rel_err_mean": 0.06810611031121677,
+    "rel_err_max_layer": 0.09340262413024902,
+    "snr_db_mean": 23.58567025926378
+   },
+   "V": {
+    "bits_per_element": 5.5,
+    "rel_err_mean": 0.051126498728990555,
+    "rel_err_max_layer": 0.06290438026189804,
+    "snr_db_mean": 25.86316744486491
+   }
+  },
+  "q4_0": {
+   "K": {
+    "bits_per_element": 4.5,
+    "rel_err_mean": 0.12188002632723914,
+    "rel_err_max_layer": 0.15444475412368774,
+    "snr_db_mean": 18.510999891493057
+   },
+   "V": {
+    "bits_per_element": 4.5,
+    "rel_err_mean": 0.09649721533060074,
+    "rel_err_max_layer": 0.11711679399013519,
+    "snr_db_mean": 20.34167522854275
+   }
+  },
+  "q4_1": {
+   "K": {
+    "bits_per_element": 5.0,
+    "rel_err_mean": 0.09855367408858405,
+    "rel_err_max_layer": 0.11643219739198685,
+    "snr_db_mean": 20.16543409559462
+   },
+   "V": {
+    "bits_per_element": 5.0,
+    "rel_err_mean": 0.08355441441138585,
+    "rel_err_max_layer": 0.09284953027963638,
+    "snr_db_mean": 21.570587158203125
+   }
+  },
+  "q3_sym": {
+   "K": {
+    "bits_per_element": 3.5,
+    "rel_err_mean": 0.2645042753881878,
+    "rel_err_max_layer": 0.3260684907436371,
+    "snr_db_mean": 12.015581236945259
+   },
+   "V": {
+    "bits_per_element": 3.5,
+    "rel_err_mean": 0.2518758674462636,
+    "rel_err_max_layer": 0.28536877036094666,
+    "snr_db_mean": 11.994508743286133
+   }
+  },
+  "kivi4": {
+   "K": {
+    "bits_per_element": 5.0,
+    "rel_err_mean": 0.03887586440477106,
+    "rel_err_max_layer": 0.049985550343990326,
+    "snr_db_mean": 28.710099750094944
+   },
+   "V": {
+    "bits_per_element": 5.0,
+    "rel_err_mean": 0.08355441441138585,
+    "rel_err_max_layer": 0.09284953027963638,
+    "snr_db_mean": 21.570587158203125
+   }
+  },
+  "kivi2": {
+   "K": {
+    "bits_per_element": 3.0,
+    "rel_err_mean": 0.19650275260210037,
+    "rel_err_max_layer": 0.25259852409362793,
+    "snr_db_mean": 14.62801890903049
+   },
+   "V": {
+    "bits_per_element": 3.0,
+    "rel_err_mean": 0.42057061195373535,
+    "rel_err_max_layer": 0.4776099622249603,
+    "snr_db_mean": 7.535943508148193
+   }
+  },
+  "lowrank128": {
+   "K": {
+    "bits_per_element": 2.888888888888889,
+    "rel_err_mean": 0.23031834264596304,
+    "rel_err_max_layer": 0.28987616300582886,
+    "snr_db_mean": 13.715383105807835
+   },
+   "V": {
+    "bits_per_element": 2.888888888888889,
+    "rel_err_mean": 0.41934361722734237,
+    "rel_err_max_layer": 0.47756218910217285,
+    "snr_db_mean": 7.579633394877116
+   }
+  },
+  "lowrank256": {
+   "K": {
+    "bits_per_element": 5.777777777777778,
+    "rel_err_mean": 0.16062204870912763,
+    "rel_err_max_layer": 0.20752458274364471,
+    "snr_db_mean": 16.79921966128879
+   },
+   "V": {
+    "bits_per_element": 5.777777777777778,
+    "rel_err_mean": 0.2727891306082408,
+    "rel_err_max_layer": 0.32542791962623596,
+    "snr_db_mean": 11.343497170342339
+   }
+  },
+  "lowrank512": {
+   "K": {
+    "bits_per_element": 11.555555555555555,
+    "rel_err_mean": 0.08371907286345959,
+    "rel_err_max_layer": 0.11075285077095032,
+    "snr_db_mean": 22.484486050075954
+   },
+   "V": {
+    "bits_per_element": 11.555555555555555,
+    "rel_err_mean": 0.12132049227754275,
+    "rel_err_max_layer": 0.1521919071674347,
+    "snr_db_mean": 18.59216456943088
+   }
+  }
+ }
+}

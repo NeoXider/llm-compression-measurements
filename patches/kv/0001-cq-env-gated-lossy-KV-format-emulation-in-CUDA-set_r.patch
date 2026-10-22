@@ -1,0 +1,211 @@
+From d435179434761d70703b6de3fd6ced775f180af8 Mon Sep 17 00:00:00 2001
+From: NeoXider <94991394+NeoXider@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 23:53:57 +0500
+Subject: [PATCH 1/7] cq: env-gated lossy KV-format emulation in CUDA set_rows
+ (CQ_KV_EMU)
+
+Research hook for measuring quality of KV compression variants on top of
+F16 / Q8_0 / Q4_0 baselines: f16drop2/4, q8_0, q8_7bit, q8_6bit_out1, q4_0,
+q4_out1, q3_out1. Rows written f32 -> F16 are quantized and dequantized with
+the variant's codec; the cache stays F16 (quality only, not memory/speed).
+No-op unless CQ_KV_EMU is set.
+---
+ ggml/src/ggml-cuda/cq-kv-emu.cuh | 159 +++++++++++++++++++++++++++++++
+ ggml/src/ggml-cuda/set-rows.cu   |   9 ++
+ 2 files changed, 168 insertions(+)
+ create mode 100644 ggml/src/ggml-cuda/cq-kv-emu.cuh
+
+diff --git a/ggml/src/ggml-cuda/cq-kv-emu.cuh b/ggml/src/ggml-cuda/cq-kv-emu.cuh
+new file mode 100644
+index 00000000..c6a20623
+--- /dev/null
++++ b/ggml/src/ggml-cuda/cq-kv-emu.cuh
+@@ -0,0 +1,159 @@
++#pragma once
++// CQ KV-compression EMULATION (research branch cq/kv-compress).
++// When the environment variable CQ_KV_EMU is set and a KV row is written with set_rows f32 -> F16,
++// every row (one token of one layer's K or V, ne00 values) is passed through a lossy codec
++// (quantize -> dequantize) and the DEQUANTIZED values are stored in the F16 cache.
++// Attention then sees exactly the values the compressed format would decode to (up to the final
++// F16 rounding of each dequantized value), so KL / PPL / task quality are real measurements.
++// Memory use and speed are NOT those of a packed format (the cache stays F16).
++//   f16drop2 / f16drop4 : F16 with the 2 / 4 lowest mantissa bits truncated
++//   q8_0                : llama.cpp q8_0 rule (emulated baseline)
++//   q8_7bit             : q8_0 codes rounded to 7 bits (round(q/2)*2, clamp to [-128,126])
++//   q8_6bit_out1        : top 1% |x| of the row kept exact, rest symmetric 6-bit per 32 (d = amax/31)
++//   q4_0                : llama.cpp q4_0 rule (emulated baseline)
++//   q4_out1             : top 1% |x| exact, rest q4_0 rule
++//   q3_out1             : top 1% |x| exact, rest symmetric 3-bit per 32 (d = amax/3, q in [-4,3])
++#include "common.cuh"
++#include <cstdlib>
++#include <cstring>
++#include <cstdio>
++
++enum cq_emu_mode { CQ_EMU_NONE = 0, CQ_EMU_F16_DROP2, CQ_EMU_F16_DROP4, CQ_EMU_Q8_0, CQ_EMU_Q8_7BIT, CQ_EMU_Q8_6BIT_OUT1,
++                   CQ_EMU_Q4_0, CQ_EMU_Q4_OUT1, CQ_EMU_Q3_OUT1 };
++
++static int cq_kv_emu_mode() {
++    static int mode = -1;
++    if (mode < 0) {
++        mode = CQ_EMU_NONE;
++        const char * s = getenv("CQ_KV_EMU");
++        if (s) {
++            static const struct { const char * n; int m; } tab[] = {
++                {"f16drop2", CQ_EMU_F16_DROP2}, {"f16drop4", CQ_EMU_F16_DROP4}, {"q8_0", CQ_EMU_Q8_0}, {"q8_7bit", CQ_EMU_Q8_7BIT},
++                {"q8_6bit_out1", CQ_EMU_Q8_6BIT_OUT1}, {"q4_0", CQ_EMU_Q4_0}, {"q4_out1", CQ_EMU_Q4_OUT1}, {"q3_out1", CQ_EMU_Q3_OUT1}};
++            for (const auto & t : tab) if (!strcmp(s, t.n)) mode = t.m;
++            fprintf(stderr, "CQ_KV_EMU=%s -> mode %d%s\n", s, mode, mode ? "" : " (unknown, disabled)");
++        }
++    }
++    return mode;
++}
++
++static __device__ __forceinline__ bool cq_has_outliers(int m) {
++    return m == CQ_EMU_Q8_6BIT_OUT1 || m == CQ_EMU_Q4_OUT1 || m == CQ_EMU_Q3_OUT1;
++}
++
++template <typename idx_t>
++static __global__ void k_cq_emu_rows(const float * __restrict__ src0, const idx_t * __restrict__ src1, half * __restrict__ dst,
++                                     const int ne00, const int ne01, const int ne02, const int ne11, const int ne12,
++                                     const int64_t s01, const int64_t s02, const int64_t s03,
++                                     const int64_t s10, const int64_t s11, const int64_t s12,
++                                     const int64_t s1, const int64_t s2, const int64_t s3, const int mode, const int n_out) {
++    extern __shared__ float sh[];
++    float * v = sh;
++    unsigned char * out = (unsigned char *) (sh + ne00);
++    __shared__ float wmax[32];
++    __shared__ int widx[32];
++
++    const int row = blockIdx.x;
++    const int i01 = row % ne01;
++    const int t   = row / ne01;
++    const int i02 = t % ne02;
++    const int i03 = t / ne02;
++    const int64_t dst_row = src1[(int64_t) i01*s10 + (int64_t)(i02 % ne11)*s11 + (int64_t)(i03 % ne12)*s12];
++    const float * srow = src0 + i01*s01 + i02*s02 + i03*s03;
++    half * drow = dst + dst_row*s1 + i02*s2 + i03*s3;
++
++    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, nwarps = blockDim.x >> 5;
++    for (int i = threadIdx.x; i < ne00; i += blockDim.x) { v[i] = srow[i]; out[i] = 0; }
++    __syncthreads();
++
++    if (cq_has_outliers(mode)) {  // select the n_out largest |x| of the row (ties -> lowest index)
++        for (int k = 0; k < n_out; ++k) {
++            float m = -1.0f; int mi = 0x7fffffff;
++            for (int i = threadIdx.x; i < ne00; i += blockDim.x) {
++                const float a = fabsf(v[i]);
++                if (!out[i] && (a > m || (a == m && i < mi))) { m = a; mi = i; }
++            }
++            for (int o = 16; o; o >>= 1) {
++                const float om = __shfl_xor_sync(0xffffffff, m, o);
++                const int   oi = __shfl_xor_sync(0xffffffff, mi, o);
++                if (om > m || (om == m && oi < mi)) { m = om; mi = oi; }
++            }
++            if (lane == 0) { wmax[warp] = m; widx[warp] = mi; }
++            __syncthreads();
++            if (threadIdx.x == 0) {
++                float bm = -1.0f; int bi = 0x7fffffff;
++                for (int w = 0; w < nwarps; ++w) if (wmax[w] > bm || (wmax[w] == bm && widx[w] < bi)) { bm = wmax[w]; bi = widx[w]; }
++                if (bi < ne00) out[bi] = 1;
++            }
++            __syncthreads();
++        }
++    }
++
++    for (int b = warp; b < ne00/32; b += nwarps) {
++        const int i = b*32 + lane;
++        const float x = v[i];
++        const bool  o = out[i];
++        if (mode == CQ_EMU_F16_DROP2 || mode == CQ_EMU_F16_DROP4) {
++            const unsigned short mask = mode == CQ_EMU_F16_DROP2 ? 0xFFFC : 0xFFF0;
++            drow[i] = __ushort_as_half(__half_as_ushort(__float2half_rn(x)) & mask);
++            continue;
++        }
++        // block absmax over non-outliers, and (for q4 rule) the signed value of the first max |x|
++        float ax = o ? 0.0f : fabsf(x);
++        float sv = o ? 0.0f : x;
++        int   si = lane;
++        for (int off = 16; off; off >>= 1) {
++            const float oa = __shfl_xor_sync(0xffffffff, ax, off);
++            const float os = __shfl_xor_sync(0xffffffff, sv, off);
++            const int   oi = __shfl_xor_sync(0xffffffff, si, off);
++            if (oa > ax || (oa == ax && oi < si)) { ax = oa; sv = os; si = oi; }
++        }
++        float r;
++        if (mode == CQ_EMU_Q8_0 || mode == CQ_EMU_Q8_7BIT) {
++            const float d = ax / 127.0f, id = d ? 1.0f/d : 0.0f;
++            const float dh = __half2float(__float2half_rn(d));
++            float q = roundf(x*id);
++            if (mode == CQ_EMU_Q8_7BIT) { q = 2.0f*fminf(fmaxf(roundf(q*0.5f), -64.0f), 63.0f); }
++            r = q*dh;
++        } else if (mode == CQ_EMU_Q8_6BIT_OUT1) {
++            const float d = ax / 31.0f, id = d ? 1.0f/d : 0.0f;
++            const float dh = __half2float(__float2half_rn(d));
++            r = fminf(fmaxf(roundf(x*id), -32.0f), 31.0f)*dh;
++        } else if (mode == CQ_EMU_Q4_0 || mode == CQ_EMU_Q4_OUT1) {
++            const float d = sv / -8.0f, id = d ? 1.0f/d : 0.0f;
++            const float dh = __half2float(__float2half_rn(d));
++            const int q = min(15, (int)(int8_t)(x*id + 8.5f));
++            r = (q - 8)*dh;
++        } else {  // CQ_EMU_Q3_OUT1
++            const float d = ax / 3.0f, id = d ? 1.0f/d : 0.0f;
++            const float dh = __half2float(__float2half_rn(d));
++            r = fminf(fmaxf(roundf(x*id), -4.0f), 3.0f)*dh;
++        }
++        if (o) r = x;
++        drow[i] = __float2half_rn(r);
++    }
++}
++
++// returns true if handled
++template <typename idx_t>
++static bool cq_kv_emu_set_rows(const float * src0_d, const idx_t * src1_d, half * dst_d,
++                               int64_t ne00, int64_t ne01, int64_t ne02, int64_t ne03, int64_t ne11, int64_t ne12,
++                               size_t nb01, size_t nb02, size_t nb03, size_t nb10, size_t nb11, size_t nb12,
++                               size_t nb1, size_t nb2, size_t nb3, cudaStream_t stream) {
++    const int mode = cq_kv_emu_mode();
++    if (mode == CQ_EMU_NONE || ne00 % 32 != 0 || ne00 < 64 || ne00 > 8192) {
++        return false;
++    }
++    const int64_t nrows = ne01*ne02*ne03;
++    if (nrows <= 0) {
++        return true;
++    }
++    const int n_out = (int) (ne00 / 100);
++    const size_t smem = ne00*sizeof(float) + ne00;
++    k_cq_emu_rows<idx_t><<<(unsigned) nrows, 256, smem, stream>>>(
++        src0_d, src1_d, dst_d, (int) ne00, (int) ne01, (int) ne02, (int) ne11, (int) ne12,
++        nb01/sizeof(float), nb02/sizeof(float), nb03/sizeof(float),
++        nb10/sizeof(idx_t), nb11/sizeof(idx_t), nb12/sizeof(idx_t),
++        nb1/sizeof(half), nb2/sizeof(half), nb3/sizeof(half), mode, n_out);
++    return true;
++}
+diff --git a/ggml/src/ggml-cuda/set-rows.cu b/ggml/src/ggml-cuda/set-rows.cu
+index 46599706..58d203bb 100644
+--- a/ggml/src/ggml-cuda/set-rows.cu
++++ b/ggml/src/ggml-cuda/set-rows.cu
+@@ -1,5 +1,7 @@
+ #include "set-rows.cuh"
+ #include "cpy-utils.cuh"
++#include "cq-kv-emu.cuh"
++#include <type_traits>
+ 
+ typedef void (*set_rows_kernel_t)(const char * src, char * dst);
+ 
+@@ -238,6 +240,13 @@ static void set_rows_cuda(ggml_backend_cuda_context & ctx, const ggml_tensor * s
+             stream
+         );
+     } else if (dst->type == GGML_TYPE_F16) {
++        if constexpr (std::is_same_v<src_t, float>) {
++            // CQ research hook: lossy KV-format emulation (no-op unless CQ_KV_EMU is set)
++            if (cq_kv_emu_set_rows<idx_t>(src0_d, src1_d, (half*)dst->data, ne00, ne01, ne02, ne03, ne11, ne12,
++                                          nb01, nb02, nb03, nb10, nb11, nb12, nb1, nb2, nb3, stream)) {
++                return;
++            }
++        }
+         set_rows_cuda(
+             src0_d, src1_d, (half*)dst->data,
+             ne00, ne01, ne02, ne03,
+-- 
+2.54.0.windows.1
+

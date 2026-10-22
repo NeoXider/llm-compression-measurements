@@ -1,0 +1,67 @@
+{
+ "tokens": 2304,
+ "layers": 36,
+ "roundtrip": "every group bit-exact",
+ "results": {
+  "K/row/k1": {
+   "bits_per_element": 16.97374191990605,
+   "ratio_vs_f16": 1.0608588699941282,
+   "escape_rate": 0.9134983839812102
+  },
+  "K/row/k2": {
+   "bits_per_element": 15.983508745829264,
+   "ratio_vs_f16": 0.998969296614329,
+   "escape_rate": 0.5154517491658529
+  },
+  "K/row/k3": {
+   "bits_per_element": 14.713332658932533,
+   "ratio_vs_f16": 0.9195832911832833,
+   "escape_rate": 0.06141653178650656
+  },
+  "K/time/k1": {
+   "bits_per_element": 16.54006776691955,
+   "ratio_vs_f16": 1.0337542354324718,
+   "escape_rate": 0.8267635533839096
+  },
+  "K/time/k2": {
+   "bits_per_element": 14.738146134364753,
+   "ratio_vs_f16": 0.921134133397797,
+   "escape_rate": 0.2663792268729504
+  },
+  "K/time/k3": {
+   "bits_per_element": 14.497854480036983,
+   "ratio_vs_f16": 0.9061159050023114,
+   "escape_rate": 0.018320896007396555
+  },
+  "V/row/k1": {
+   "bits_per_element": 16.87194589920986,
+   "ratio_vs_f16": 1.0544966187006162,
+   "escape_rate": 0.8931391798419717
+  },
+  "V/row/k2": {
+   "bits_per_element": 15.262702388527952,
+   "ratio_vs_f16": 0.953918899282997,
+   "escape_rate": 0.37129047770559054
+  },
+  "V/row/k3": {
+   "bits_per_element": 14.530858557901265,
+   "ratio_vs_f16": 0.9081786598688291,
+   "escape_rate": 0.024921711580252942
+  },
+  "V/time/k1": {
+   "bits_per_element": 16.777111230073153,
+   "ratio_vs_f16": 1.048569451879572,
+   "escape_rate": 0.8741722460146304
+  },
+  "V/time/k2": {
+   "bits_per_element": 15.084750823032708,
+   "ratio_vs_f16": 0.9427969264395443,
+   "escape_rate": 0.3357001646065418
+  },
+  "V/time/k3": {
+   "bits_per_element": 14.518753663993175,
+   "ratio_vs_f16": 0.9074221039995735,
+   "escape_rate": 0.022500732798635223
+  }
+ }
+}

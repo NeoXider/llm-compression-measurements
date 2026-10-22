@@ -1,0 +1,26 @@
+commit ec5d9e7e327f62e3a443ec8b53c24ba6febe7f3f
+Merge: 0499d389 b4da56a2
+Author: NeoXider <neoxider@users.noreply.github.com>
+Date:   Thu Oct 22 16:58:30 2026 +0500
+
+    cq: merge cq/weights-compress into cq/combined (weights types 50..52, KV types 60..62)
+
+diff --cc ggml/include/ggml.h
+index a118b861,eaf71357..4538796d
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@@ -430,10 -430,10 +430,14 @@@ extern "C" 
+          GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
+          GGML_TYPE_Q1_0    = 41,
+          GGML_TYPE_Q2_0    = 42,
++         // cq/weights-compress research types (values 50..55 reserved for compressed weights, see ggml-cq.h):
++         GGML_TYPE_CQ_BF16H  = 50, // BF16, lossless: Huffman-coded exponent (companion tensor "<name>.cqx") + raw sign/mantissa byte
++         GGML_TYPE_CQ_BF16W4 = 51, // BF16, 4-bit exponent offset per 64 values (12.125 bits); lossless with companion escape list, else values below the window flush to 0
++         GGML_TYPE_CQ_BF16W3 = 52, // BF16, 3-bit exponent offset per 64 values (11.125 bits); lossy (values below the window flush to 0)
+ +        // cq/kv-compress research types (values 60..63 reserved for KV cache formats):
+ +        GGML_TYPE_F16D4   = 60, // F16 with the 4 low mantissa bits dropped: 12 bits/value, block of 32 = 48 bytes (KV cache)
+ +        GGML_TYPE_F16E3   = 61, // lossless F16, 3-bit exponent window codes + escapes, block of 128 = 244 bytes (KV cache)
+ +        GGML_TYPE_Q4O     = 62, // 4-bit (Q4_0 rule) + the 2 largest of every 128 values exact, 80 bytes per 128 (KV cache)
+          GGML_TYPE_COUNT   = 64,
+      };
+  

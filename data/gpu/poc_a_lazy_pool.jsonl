@@ -1,0 +1,13 @@
+{"device":"NVIDIA GeForce RTX 3090","granularity_bytes":2097152,"baseline_local_mib":222.0,"kv_bytes_per_token":147456,"ctx":32768}
+{"arm":"eager","filled_tokens":"any","kv_bytes_needed_mib":4608.0,"local_mib":4830.0,"delta_mib":4608.0}
+{"arm":"lazy1","filled_tokens":0,"local_mib":222.0,"delta_mib":0.0,"note":"VA reserved only"}
+{"arm":"lazy1","filled_tokens":1024,"kv_bytes_needed_mib":144.0,"mapped_mib":144.0,"local_mib":366.0,"delta_mib":144.0}
+{"arm":"lazy1","filled_tokens":4096,"kv_bytes_needed_mib":576.0,"mapped_mib":576.0,"local_mib":798.0,"delta_mib":576.0}
+{"arm":"lazy1","filled_tokens":16384,"kv_bytes_needed_mib":2304.0,"mapped_mib":2304.0,"local_mib":2526.0,"delta_mib":2304.0}
+{"arm":"lazy1","filled_tokens":32768,"kv_bytes_needed_mib":4608.0,"mapped_mib":4608.0,"local_mib":4830.0,"delta_mib":4608.0}
+{"arm":"lazy72","filled_tokens":0,"local_mib":222.0,"delta_mib":0.0,"note":"VA reserved only"}
+{"arm":"lazy72","filled_tokens":1024,"kv_bytes_needed_mib":144.0,"mapped_mib":144.0,"local_mib":366.0,"delta_mib":144.0}
+{"arm":"lazy72","filled_tokens":4096,"kv_bytes_needed_mib":576.0,"mapped_mib":576.0,"local_mib":798.0,"delta_mib":576.0}
+{"arm":"lazy72","filled_tokens":16384,"kv_bytes_needed_mib":2304.0,"mapped_mib":2304.0,"local_mib":2526.0,"delta_mib":2304.0}
+{"arm":"lazy72","filled_tokens":32768,"kv_bytes_needed_mib":4608.0,"mapped_mib":4608.0,"local_mib":4830.0,"delta_mib":4608.0}
+{"end_local_mib":222.0}

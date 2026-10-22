@@ -1,0 +1,35 @@
+From b45c5fa013184469ffcad0b6859570e9b274e248 Mon Sep 17 00:00:00 2001
+From: NeoXider <neoxider@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 15:52:51 +0500
+Subject: [PATCH 6/7] cq: no attention rotation for f16d4 and q4o by default
+ (measured: equal KL for f16d4, q4o KL 0.033 without vs 0.060 with rotation)
+
+---
+ src/llama-kv-cache.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 071eb744..9deec7b5 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -352,7 +352,7 @@ llama_kv_cache::llama_kv_cache(
+             !attn_rot_disable &&
+             n_embd_head_k_all > 0 &&
+             ggml_is_quantized(type_k) &&
+-            type_k != GGML_TYPE_F16E3 && // cq/kv-compress: lossless, the rotation would only change rounding
++            type_k != GGML_TYPE_F16E3 && type_k != GGML_TYPE_F16D4 && type_k != GGML_TYPE_Q4O && // cq/kv-compress: measured, no gain (f16e3 lossless, f16d4 equal KL, q4o 2x worse with rotation)
+             hparams.n_embd_head_k() % 64 == 0;
+ 
+         // always create Hadamard rotation tensors for DeepSeek lightning indexers
+@@ -366,7 +366,7 @@ llama_kv_cache::llama_kv_cache(
+             !attn_rot_disable &&
+             n_embd_head_v_all > 0 &&
+             ggml_is_quantized(type_v) &&
+-            type_v != GGML_TYPE_F16E3 && // cq/kv-compress
++            type_v != GGML_TYPE_F16E3 && type_v != GGML_TYPE_F16D4 && type_v != GGML_TYPE_Q4O && // cq/kv-compress
+             hparams.n_embd_head_v() % 64 == 0;
+     }
+ 
+-- 
+2.54.0.windows.1
+

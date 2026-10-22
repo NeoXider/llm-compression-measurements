@@ -1,0 +1,29 @@
+{
+ "tensors": 40,
+ "schemes": {
+  "per_tensor_sym": {
+   "H_codes_bits": 0.7950796471272982,
+   "codes_ratio": 0.19876991178182454,
+   "side_bits_per_weight": 0.00048828125,
+   "total_ratio_incl_side": 0.19886770625127628
+  },
+  "per_row_sym": {
+   "H_codes_bits": 2.879151050179597,
+   "codes_ratio": 0.7197877625448993,
+   "side_bits_per_weight": 0.0078125,
+   "total_ratio_incl_side": 0.7203339852299969
+  },
+  "group128_asym": {
+   "H_codes_bits": 3.5992816681632247,
+   "codes_ratio": 0.8998204170408062,
+   "side_bits_per_weight": 0.25,
+   "total_ratio_incl_side": 0.9057133336854646
+  },
+  "group32_sym": {
+   "H_codes_bits": 3.587576758118783,
+   "codes_ratio": 0.8968941895296958,
+   "side_bits_per_weight": 0.5,
+   "total_ratio_incl_side": 0.9083503906930629
+  }
+ }
+}

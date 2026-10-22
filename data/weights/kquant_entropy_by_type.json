@@ -1,0 +1,490 @@
+{
+ "Qwen3-4B-Q4_K_M.gguf": {
+  "file_bytes": 2497280256,
+  "analysed_native_bytes": 2490539520.0,
+  "analysed_ideal_bytes": 2325875572.510257,
+  "analysed_ratio": 0.9338842262218978,
+  "unanalysed_bytes": 784384,
+  "whole_ratio": 0.9339050425256373,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 37,
+    "native_bytes": 725491200.0,
+    "ideal_bytes": 651170432.4679735,
+    "fields": {
+     "codes6": {
+      "native_bytes": 663306240.0,
+      "ideal_bytes": 599225558.2228254,
+      "ratio": 0.9033920112417839
+     },
+     "scales": {
+      "native_bytes": 55275520.0,
+      "ideal_bytes": 48318202.10731485,
+      "ratio": 0.8741338318900455
+     },
+     "d": {
+      "native_bytes": 6909440.0,
+      "ideal_bytes": 3626672.137833415,
+      "ratio": 0.5248865519974724
+     }
+    },
+    "ratio": 0.8975580027269434
+   },
+   "Q4_K": {
+    "tensors": 216,
+    "native_bytes": 1765048320.0,
+    "ideal_bytes": 1674705140.0422835,
+    "fields": {
+     "d": {
+      "native_bytes": 24514560.0,
+      "ideal_bytes": 14186342.894005692,
+      "ratio": 0.5786904963419981
+     },
+     "dmin": {
+      "native_bytes": 24514560.0,
+      "ideal_bytes": 15609066.402543332,
+      "ratio": 0.6367263537482758
+     },
+     "scales": {
+      "native_bytes": 147087360.0,
+      "ideal_bytes": 128374749.94718154,
+      "ratio": 0.8727789386333505
+     },
+     "codes4": {
+      "native_bytes": 1568931840.0,
+      "ideal_bytes": 1516534980.7985523,
+      "ratio": 0.9666034827864494
+     }
+    },
+    "ratio": 0.9488154636142105
+   }
+  }
+ },
+ "qwen35-2b-Q8_0.gguf": {
+  "file_bytes": 2076675008,
+  "analysed_native_bytes": 2063474688.0,
+  "analysed_ideal_bytes": 1913697922.8407052,
+  "analysed_ratio": 0.9274152641511371,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.9274938920251471,
+  "by_type": {
+   "Q8_0": {
+    "tensors": 195,
+    "native_bytes": 2063474688.0,
+    "ideal_bytes": 1913697922.8407052,
+    "fields": {
+     "d": {
+      "native_bytes": 121380864.0,
+      "ideal_bytes": 58009929.26398476,
+      "ratio": 0.4779165953538176
+     },
+     "codes8": {
+      "native_bytes": 1942093824.0,
+      "ideal_bytes": 1855687993.5767214,
+      "ratio": 0.9555089309509701
+     }
+    },
+    "ratio": 0.9274152641511371
+   }
+  }
+ },
+ "qwen35-2b-Q6_K.gguf": {
+  "file_bytes": 1606324160,
+  "analysed_native_bytes": 1593123840.0,
+  "analysed_ideal_bytes": 1518946817.8671386,
+  "analysed_ratio": 0.9534392617382078,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.9535045690528285,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 195,
+    "native_bytes": 1593123840.0,
+    "ideal_bytes": 1518946817.8671386,
+    "fields": {
+     "codes6": {
+      "native_bytes": 1456570368.0,
+      "ideal_bytes": 1400919908.8051054,
+      "ratio": 0.9617934976452202
+     },
+     "scales": {
+      "native_bytes": 121380864.0,
+      "ideal_bytes": 110344068.4333275,
+      "ratio": 0.9090730185717536
+     },
+     "d": {
+      "native_bytes": 15172608.0,
+      "ideal_bytes": 7682840.628705904,
+      "ratio": 0.5063625599966666
+     }
+    },
+    "ratio": 0.9534392617382078
+   }
+  }
+ },
+ "qwen35-2b-Q5_K_M.gguf": {
+  "file_bytes": 1454787520,
+  "analysed_native_bytes": 1441587200.0,
+  "analysed_ideal_bytes": 1396155515.7400174,
+  "analysed_ratio": 0.968484955845902,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.9685337990875158,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 27,
+    "native_bytes": 657162240.0,
+    "ideal_bytes": 626389636.4698474,
+    "fields": {
+     "codes6": {
+      "native_bytes": 600834048.0,
+      "ideal_bytes": 577527767.9752661,
+      "ratio": 0.9612101209937858
+     },
+     "scales": {
+      "native_bytes": 50069504.0,
+      "ideal_bytes": 45614790.50524625,
+      "ratio": 0.9110294063477492
+     },
+     "d": {
+      "native_bytes": 6258688.0,
+      "ideal_bytes": 3247077.9893350317,
+      "ratio": 0.5188112890968574
+     }
+    },
+    "ratio": 0.9531735062407838
+   },
+   "Q5_K": {
+    "tensors": 168,
+    "native_bytes": 784424960.0,
+    "ideal_bytes": 769765879.2701701,
+    "fields": {
+     "d": {
+      "native_bytes": 8913920.0,
+      "ideal_bytes": 4792625.9877700545,
+      "ratio": 0.5376563832489022
+     },
+     "dmin": {
+      "native_bytes": 8913920.0,
+      "ideal_bytes": 5784145.327469766,
+      "ratio": 0.6488890776975523
+     },
+     "scales": {
+      "native_bytes": 53483520.0,
+      "ideal_bytes": 47823962.31780205,
+      "ratio": 0.8941812789771887
+     },
+     "highbit": {
+      "native_bytes": 142622720.0,
+      "ideal_bytes": 142622167.91949522,
+      "ratio": 0.999996129084449
+     },
+     "codes4": {
+      "native_bytes": 570490880.0,
+      "ideal_bytes": 568742977.7176323,
+      "ratio": 0.9969361433396311
+     }
+    },
+    "ratio": 0.9813123224306505
+   }
+  }
+ },
+ "qwen35-2b-Q4_K_M.gguf": {
+  "file_bytes": 1312164800,
+  "analysed_native_bytes": 1298964480.0,
+  "analysed_ideal_bytes": 1235224060.5012026,
+  "analysed_ratio": 0.9509298210380646,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.951014207726934,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 27,
+    "native_bytes": 657162240.0,
+    "ideal_bytes": 626389636.4698474,
+    "fields": {
+     "codes6": {
+      "native_bytes": 600834048.0,
+      "ideal_bytes": 577527767.9752661,
+      "ratio": 0.9612101209937858
+     },
+     "scales": {
+      "native_bytes": 50069504.0,
+      "ideal_bytes": 45614790.50524625,
+      "ratio": 0.9110294063477492
+     },
+     "d": {
+      "native_bytes": 6258688.0,
+      "ideal_bytes": 3247077.9893350317,
+      "ratio": 0.5188112890968574
+     }
+    },
+    "ratio": 0.9531735062407838
+   },
+   "Q4_K": {
+    "tensors": 168,
+    "native_bytes": 641802240.0,
+    "ideal_bytes": 608834424.031355,
+    "fields": {
+     "d": {
+      "native_bytes": 8913920.0,
+      "ideal_bytes": 5363807.03474846,
+      "ratio": 0.6017338090030492
+     },
+     "dmin": {
+      "native_bytes": 8913920.0,
+      "ideal_bytes": 5786062.297939246,
+      "ratio": 0.6491041312844681
+     },
+     "scales": {
+      "native_bytes": 53483520.0,
+      "ideal_bytes": 47889684.02755471,
+      "ratio": 0.8954101006731553
+     },
+     "codes4": {
+      "native_bytes": 570490880.0,
+      "ideal_bytes": 549794870.6711128,
+      "ratio": 0.963722453672025
+     }
+    },
+    "ratio": 0.9486324386018893
+   }
+  }
+ },
+ "qwen35-2b-Q3_K_M.gguf": {
+  "file_bytes": 1127802816,
+  "analysed_native_bytes": 1114602496.0,
+  "analysed_ideal_bytes": 1072710564.918565,
+  "analysed_ratio": 0.9624153622194697,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.962490666631171,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 1,
+    "native_bytes": 417177600.0,
+    "ideal_bytes": 397534855.0740766,
+    "fields": {
+     "codes6": {
+      "native_bytes": 381419520.0,
+      "ideal_bytes": 366470843.8098768,
+      "ratio": 0.9608077840637962
+     },
+     "scales": {
+      "native_bytes": 31784960.0,
+      "ideal_bytes": 28964102.579870146,
+      "ratio": 0.9112518178368054
+     },
+     "d": {
+      "native_bytes": 3973120.0,
+      "ideal_bytes": 2099908.6843296504,
+      "ratio": 0.5285288851908954
+     }
+    },
+    "ratio": 0.952915149504855
+   },
+   "Q3_K": {
+    "tensors": 137,
+    "native_bytes": 367713280.0,
+    "ideal_bytes": 361555514.72969735,
+    "fields": {
+     "highbit": {
+      "native_bytes": 106971136.0,
+      "ideal_bytes": 105114916.33985756,
+      "ratio": 0.982647471742822
+     },
+     "codes2": {
+      "native_bytes": 213942272.0,
+      "ideal_bytes": 213064569.50561896,
+      "ratio": 0.9958974797912726
+     },
+     "scales": {
+      "native_bytes": 40114176.0,
+      "ideal_bytes": 38689833.68305154,
+      "ratio": 0.9644927938455359
+     },
+     "d": {
+      "native_bytes": 6685696.0,
+      "ideal_bytes": 4686195.201169689,
+      "ratio": 0.7009285497231237
+     }
+    },
+    "ratio": 0.9832538948000392
+   },
+   "Q5_K": {
+    "tensors": 3,
+    "native_bytes": 25952256.0,
+    "ideal_bytes": 25461865.601601206,
+    "fields": {
+     "d": {
+      "native_bytes": 294912.0,
+      "ideal_bytes": 156939.01009155577,
+      "ratio": 0.5321553890365797
+     },
+     "dmin": {
+      "native_bytes": 294912.0,
+      "ideal_bytes": 188032.44826237322,
+      "ratio": 0.6375883255424439
+     },
+     "scales": {
+      "native_bytes": 1769472.0,
+      "ideal_bytes": 1579155.647900687,
+      "ratio": 0.8924445528952631
+     },
+     "highbit": {
+      "native_bytes": 4718592.0,
+      "ideal_bytes": 4718584.748587313,
+      "ratio": 0.999998463225325
+     },
+     "codes4": {
+      "native_bytes": 18874368.0,
+      "ideal_bytes": 18819153.746759273,
+      "ratio": 0.9970746435991538
+     }
+    },
+    "ratio": 0.981104132203428
+   },
+   "Q4_K": {
+    "tensors": 54,
+    "native_bytes": 303759360.0,
+    "ideal_bytes": 288158329.51318985,
+    "fields": {
+     "d": {
+      "native_bytes": 4218880.0,
+      "ideal_bytes": 2553203.2260928606,
+      "ratio": 0.6051850790003177
+     },
+     "dmin": {
+      "native_bytes": 4218880.0,
+      "ideal_bytes": 2750548.489811944,
+      "ratio": 0.6519617741703826
+     },
+     "scales": {
+      "native_bytes": 25313280.0,
+      "ideal_bytes": 22719590.768869355,
+      "ratio": 0.8975364223391578
+     },
+     "codes4": {
+      "native_bytes": 270008320.0,
+      "ideal_bytes": 260134987.02841556,
+      "ratio": 0.9634332269035841
+     }
+    },
+    "ratio": 0.9486401654032648
+   }
+  }
+ },
+ "qwen35-2b-Q2_K.gguf": {
+  "file_bytes": 990491584,
+  "analysed_native_bytes": 977291264.0,
+  "analysed_ideal_bytes": 928295233.826372,
+  "analysed_ratio": 0.9498654782064767,
+  "unanalysed_bytes": 2237696,
+  "whole_ratio": 0.9499800085812389,
+  "by_type": {
+   "Q6_K": {
+    "tensors": 1,
+    "native_bytes": 417177600.0,
+    "ideal_bytes": 397534855.0740766,
+    "fields": {
+     "codes6": {
+      "native_bytes": 381419520.0,
+      "ideal_bytes": 366470843.8098768,
+      "ratio": 0.9608077840637962
+     },
+     "scales": {
+      "native_bytes": 31784960.0,
+      "ideal_bytes": 28964102.579870146,
+      "ratio": 0.9112518178368054
+     },
+     "d": {
+      "native_bytes": 3973120.0,
+      "ideal_bytes": 2099908.6843296504,
+      "ratio": 0.5285288851908954
+     }
+    },
+    "ratio": 0.952915149504855
+   },
+   "Q2_K": {
+    "tensors": 137,
+    "native_bytes": 280799232.0,
+    "ideal_bytes": 260611785.45569685,
+    "fields": {
+     "scales": {
+      "native_bytes": 53485568.0,
+      "ideal_bytes": 47917543.772706024,
+      "ratio": 0.8958966982028876
+     },
+     "codes2": {
+      "native_bytes": 213942272.0,
+      "ideal_bytes": 204552986.41091263,
+      "ratio": 0.9561129948686
+     },
+     "d": {
+      "native_bytes": 6685696.0,
+      "ideal_bytes": 4082334.7934701596,
+      "ratio": 0.610607301539011
+     },
+     "dmin": {
+      "native_bytes": 6685696.0,
+      "ideal_bytes": 4058920.4786080588,
+      "ratio": 0.6071051508486265
+     }
+    },
+    "ratio": 0.92810718747157
+   },
+   "Q4_K": {
+    "tensors": 25,
+    "native_bytes": 131530752.0,
+    "ideal_bytes": 124890330.48414542,
+    "fields": {
+     "d": {
+      "native_bytes": 1826816.0,
+      "ideal_bytes": 1180429.4171554127,
+      "ratio": 0.6461676584589869
+     },
+     "dmin": {
+      "native_bytes": 1826816.0,
+      "ideal_bytes": 1204476.601742668,
+      "ratio": 0.6593310994334778
+     },
+     "scales": {
+      "native_bytes": 10960896.0,
+      "ideal_bytes": 9837245.112165947,
+      "ratio": 0.897485489522567
+     },
+     "codes4": {
+      "native_bytes": 116916224.0,
+      "ideal_bytes": 112668179.3530814,
+      "ratio": 0.9636659096438267
+     }
+    },
+    "ratio": 0.9495143043365663
+   },
+   "Q3_K": {
+    "tensors": 32,
+    "native_bytes": 147783680.0,
+    "ideal_bytes": 145258262.81245312,
+    "fields": {
+     "highbit": {
+      "native_bytes": 42991616.0,
+      "ideal_bytes": 42220440.72865945,
+      "ratio": 0.9820621939091438
+     },
+     "codes2": {
+      "native_bytes": 85983232.0,
+      "ideal_bytes": 85583983.61983904,
+      "ratio": 0.9953566716338256
+     },
+     "scales": {
+      "native_bytes": 16121856.0,
+      "ideal_bytes": 15582112.216829535,
+      "ratio": 0.9665209896943339
+     },
+     "d": {
+      "native_bytes": 2686976.0,
+      "ideal_bytes": 1871726.2471250657,
+      "ratio": 0.6965920972591737
+     }
+    },
+    "ratio": 0.9829113932773438
+   }
+  }
+ }
+}

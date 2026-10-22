@@ -1,0 +1,18 @@
+{
+ "sources": [
+  {
+   "path": "<corpus-source-ru>",
+   "source_sha256": "3000c8a0e58b9a11c6a4b4c553a4e4894ea498fa711228d6e8dbfe225c234828",
+   "source_bytes": 95456,
+   "taken_bytes": 47890
+  },
+  {
+   "path": "<corpus-source-en>",
+   "source_sha256": "de3c1109ef26d5e02ae274e8fa707ef23d9b4e252d6629873cb6932dfec0863a",
+   "source_bytes": 143613,
+   "taken_bytes": 47767
+  }
+ ],
+ "corpus_bytes": 95659,
+ "corpus_sha256": "589a50fe97f7cde9c7c877e210a884cb284d74490dbf6f116e5eb68a7b1822cc"
+}
