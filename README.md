@@ -4,12 +4,20 @@ Companion material for the paper *"How Much Can Be Added on Top of Existing KV-C
 Empirical Study of Lossless and Lossy Compression for GPU-Resident LLM Inference on a Consumer GPU"*
 (`paper/PAPER_V2_EN.md`). It is an empirical measurement study with negative results and proposes no new method.
 
-DOI: https://doi.org/10.5281/zenodo.23578725 (Zenodo archive of v3.0.1)
-
-Also on Hugging Face (paper PDF and records): https://huggingface.co/datasets/neoxider2/llm-compression-measurements
-
 Status: v3.0, 2026-10-23. License: MIT for code and scripts; the paper text and the figures are also available
 under CC BY 4.0 (see `LICENSE`). Author: NeoXider (GitHub: NeoXider).
+
+## Links
+
+| Where | Link |
+|---|---|
+| Paper PDF | [`paper/PAPER_V2_EN.pdf`](paper/PAPER_V2_EN.pdf) |
+| Zenodo archive (DOI) | https://doi.org/10.5281/zenodo.23578725 |
+| Hugging Face dataset (summary, figures, paper, records) | https://huggingface.co/datasets/neoxider2/llm-compression-measurements |
+| llama.cpp discussion | https://github.com/ggml-org/llama.cpp/discussions/31001 |
+| r/LocalLLaMA thread | https://www.reddit.com/r/LocalLLaMA/comments/1xcv0ae/i_measured_what_compression_you_can_still_stack/ |
+
+Feedback and reproduction attempts are welcome in the llama.cpp discussion or as issues here.
 
 ## What is here
 
